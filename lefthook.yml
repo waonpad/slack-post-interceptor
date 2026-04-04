@@ -1,0 +1,18 @@
+pre-push:
+  commands:
+    run-type-check:
+      run: task type-check
+    # run-tests:
+    # run: ...
+
+pre-commit:
+  parallel: true
+  commands:
+    lint-and-format:
+      glob: "*.py"
+      run: |
+        task lint-and-format
+      stage_fixed: true
+      skip:
+        - merge
+        - rebase

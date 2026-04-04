@@ -1,0 +1,45 @@
+version: "3"
+
+dotenv:
+  - ".env"
+
+tasks:
+  copy-env:
+    desc: 環境変数ファイルのコピーを行う
+    cmds:
+      - cp -n .env.example .env
+
+  setup:
+    desc: プロジェクトのセットアップを行う
+    cmds:
+      - task: copy-env
+      - lefthook install
+
+  lint:
+    desc: コードスタイルの検査を行う
+    aliases:
+      - l
+    cmds:
+      - ruff check --fix
+
+  format:
+    desc: コードスタイルの整形を行う
+    aliases:
+      - f
+    cmds:
+      - ruff format
+
+  lint-and-format:
+    desc: コードスタイルの検査と整形を行う
+    aliases:
+      - lf
+    cmds:
+      - task: lint
+      - task: format
+
+  type-check:
+    desc: 型チェックを行う
+    aliases:
+      - t
+    cmds:
+      - pyright

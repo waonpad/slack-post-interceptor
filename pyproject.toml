@@ -1,0 +1,45 @@
+[project]
+name = "workspace"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+]
+
+[tool.uv]
+dev-dependencies = [
+    "lefthook>=1.13.5",
+    "pyright>=1.1.405",
+    "ruff>=0.13.2",
+]
+
+[tool.ruff]
+src = ["src"]
+line-length = 120
+# extend-exclude = [
+#     "migrations"
+# ]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "ANN1", "E999", "UP027", "PT004", "PT005", # 非推奨ルール
+    "COM812", "ISC001", # Ruffの警告が出るので無視
+    "D", # docstring関連は緩くやりたいので全部無視する
+    "TD001", # FIXMEをコメントのタグに使用可能にする
+    "TD002", # TODOのauthorを不要にする
+    "TD003", # TODOのチケットへのリンクを不要にする
+    "ANN201", # 毎回関数の返り値の型を書くのは面倒なので無視する
+    # "PD011", # pandasを使う場合
+    # "B008", # FastAPIでDependsを使う場合
+]
+extend-select = ["I"]
+# https://docs.astral.sh/ruff/settings/#lint_logger-objects
+logger-objects = []
+
+[tool.pyright]
+typeCheckingMode = "strict"
+# exclude = [
+#     "**/migrations"
+# ]
