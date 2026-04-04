@@ -20,14 +20,14 @@ tasks:
     aliases:
       - l
     cmds:
-      - ruff check --fix
+      - uv run ruff check --fix
 
   format:
     desc: コードスタイルの整形を行う
     aliases:
       - f
     cmds:
-      - ruff format
+      - uv run ruff format
 
   lint-and-format:
     desc: コードスタイルの検査と整形を行う

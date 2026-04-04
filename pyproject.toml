@@ -17,14 +17,11 @@ dev-dependencies = [
 [tool.ruff]
 src = ["src"]
 line-length = 120
-# extend-exclude = [
-#     "migrations"
-# ]
 
 [tool.ruff.lint]
 select = ["ALL"]
 ignore = [
-    "ANN1", "E999", "UP027", "PT004", "PT005", # 非推奨ルール
+    "ANN1", # 非推奨ルール
     "COM812", "ISC001", # Ruffの警告が出るので無視
     "D", # docstring関連は緩くやりたいので全部無視する
     "TD001", # FIXMEをコメントのタグに使用可能にする
@@ -40,6 +37,3 @@ logger-objects = []
 
 [tool.pyright]
 typeCheckingMode = "strict"
-# exclude = [
-#     "**/migrations"
-# ]
