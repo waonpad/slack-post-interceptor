@@ -79,6 +79,7 @@ class EventTapHandler:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _is_slack_frontmost() -> bool:
     app = NSWorkspace.sharedWorkspace().frontmostApplication()
     return app is not None and app.bundleIdentifier() == _SLACK_BUNDLE_ID
@@ -90,4 +91,3 @@ def _copy_to_clipboard(text: str) -> None:
     pb.setString_forType_(text, NSPasteboardTypeString)
     preview = text[:_PREVIEW_MAX_LEN] + ("…" if len(text) > _PREVIEW_MAX_LEN else "")
     print(f"[COPY] {preview}")
-

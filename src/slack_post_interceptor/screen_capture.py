@@ -35,9 +35,7 @@ def get_pixel_color(x: float, y: float) -> tuple[int, int, int] | None:
     bpr = w * 4
     buf = (ctypes.c_uint8 * (h * bpr))()
     cs = Quartz.CGColorSpaceCreateDeviceRGB()
-    ctx = Quartz.CGBitmapContextCreate(
-        buf, w, h, 8, bpr, cs, Quartz.kCGImageAlphaPremultipliedLast
-    )
+    ctx = Quartz.CGBitmapContextCreate(buf, w, h, 8, bpr, cs, Quartz.kCGImageAlphaPremultipliedLast)
     if ctx is None:
         return None
 

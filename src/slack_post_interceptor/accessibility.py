@@ -37,6 +37,7 @@ def get_text_near_position(x: float, y: float) -> str | None:
 # Internal
 # ---------------------------------------------------------------------------
 
+
 def _get_text_from_ax_position(app_el: Any, x: float, y: float) -> str | None:
     """指定座標のAX要素から親を遡ってテキストエリアを探す。"""
     AS.AXUIElementCopyElementAtPosition(app_el, x, y, None)
@@ -65,6 +66,7 @@ def _get_text_from_ax_position(app_el: Any, x: float, y: float) -> str | None:
 # Internal
 # ---------------------------------------------------------------------------
 
+
 def _search_text_area_value(element: Any, depth: int) -> str | None:
     """AXTextArea を再帰探索して AXValue を返す。"""
     if depth >= _MAX_SEARCH_DEPTH:
@@ -88,6 +90,7 @@ def _search_text_area_value(element: Any, depth: int) -> str | None:
 # ---------------------------------------------------------------------------
 # Internal
 # ---------------------------------------------------------------------------
+
 
 def _slack_app_element() -> Any | None:
     global _cached_app_el
