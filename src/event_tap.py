@@ -5,16 +5,7 @@ import time
 from typing import Any
 
 import Quartz
-from AppKit import (
-    NSAlert,
-    NSApplication,
-    NSPasteboard,
-    NSPasteboardTypeString,
-    NSScreen,
-    NSWarningAlertStyle,
-    NSWorkspace,
-)
-from Foundation import NSObject, NSRunLoop, NSRunLoopCommonModes, NSTimer
+from AppKit import NSAlert, NSApplication, NSPasteboard, NSPasteboardTypeString, NSWarningAlertStyle, NSWorkspace
 
 from accessibility import SLACK_BUNDLE_ID, get_text_near_position
 from screen_capture import is_send_button_at
@@ -25,47 +16,8 @@ _RETRY_COUNT = 3
 
 WARN_KEYWORDS: tuple[str, ...] = ("確認", "対応")
 
-# 送信ボタンの近辺のみ抑制するための設定
-_HIT_RADIUS: int = 30          # キャッシュヒット判定の半径 (px)
-_BOTTOM_RATIO: float = 0.25    # キャッシュがない場合、画面下部この割合のクリックのみ抑制
-
-_click_queue: list[dict[str, Any]] = []
-_repost_count: int = 0
-
-# 送信ボタン位置のキャッシュ
-_cached_btn_x: float = -1.0
-_cached_btn_y: float = -1.0
-
-
-def _schedule_timer(target: Any, selector: str) -> None:
-    timer = NSTimer.timerWithTimeInterval_target_selector_userInfo_repeats_(
-        0.0, target, selector, None, False
-    )
-    NSRunLoop.mainRunLoop().addTimer_forMode_(timer, NSRunLoopCommonModes)
-
-
-class _ClickProcessor(NSObject):
-    def processClick_(self, _timer: Any) -> None:
-        if _click_queue:
-            info = _click_queue.pop(0)
-            threading.Thread(target=_process_click, args=(info["x"], info["y"]), daemon=True).start()
-
-
-class _MainThreadOps(NSObject):
-    def copyAndRepost_(self, info: Any) -> None:
-        _copy_to_clipboard(info["text"])
-        _repost_click(info["x"], info["y"])
-
-    def warn_(self, info: Any) -> None:
-        _copy_to_clipboard(info["text"])
-        _show_keyword_warning(info["matched"])
-
-    def repost_(self, info: Any) -> None:
-        _repost_click(info["x"], info["y"])
-
-
-_click_processor = _ClickProcessor.alloc().init()
-_main_ops = _MainThreadOps.alloc().init()
+# 再送信待ちのクリック座標
+_repost_pending: tuple[float, float] | None = None
 
 
 class EventTapHandler:
@@ -73,7 +25,10 @@ class EventTapHandler:
         self._tap: Any = None
 
     def start(self) -> None:
-        mask = Quartz.CGEventMaskBit(Quartz.kCGEventLeftMouseDown)
+        mask = (
+            Quartz.CGEventMaskBit(Quartz.kCGEventLeftMouseDown)
+            | Quartz.CGEventMaskBit(Quartz.kCGEventLeftMouseUp)
+        )
 
         self._tap = Quartz.CGEventTapCreate(
             Quartz.kCGSessionEventTap,
@@ -95,61 +50,53 @@ class EventTapHandler:
         print("[INFO] 監視開始 — Slack 送信ボタンをクリックするとコピー後に送信します")
 
     def _callback(self, _proxy: Any, event_type: int, event: Any, _refcon: Any) -> Any:
-        global _repost_count
+        global _repost_pending
+
         if event_type == Quartz.kCGEventTapDisabledByTimeout:
             print("[WARN] EventTap タイムアウト — 再有効化します")
             Quartz.CGEventTapEnable(self._tap, True)
             return None
+
         if event_type == Quartz.kCGEventLeftMouseDown:
-            if _repost_count > 0:
-                _repost_count -= 1
+            loc = Quartz.CGEventGetLocation(event)
+            x, y = float(loc.x), float(loc.y)
+
+            # 再送信イベントはそのまま通す
+            if _repost_pending is not None:
+                px, py = _repost_pending
+                if abs(x - px) < 2 and abs(y - py) < 2:
+                    _repost_pending = None
+                    return event
+
+            if not _is_slack_frontmost():
                 return event
-            if _is_slack_frontmost() and _might_be_send_button(event):
-                loc = Quartz.CGEventGetLocation(event)
-                _click_queue.append({"x": float(loc.x), "y": float(loc.y)})
-                _schedule_timer(_click_processor, "processClick:")
-                return None  # 送信ボタン候補のみ抑制
+
+            # ピクセル色判定のみ同期実行 (~10ms、タイムアウトしない)
+            if not is_send_button_at(x, y):
+                return event
+
+            # 送信ボタン確定: 抑制してバックグラウンドで処理
+            threading.Thread(target=_process_send, args=(x, y), daemon=True).start()
+            return None
+
+        if event_type == Quartz.kCGEventLeftMouseUp:
+            loc = Quartz.CGEventGetLocation(event)
+            x, y = float(loc.x), float(loc.y)
+            # 再送信待ちの座標と一致する mouseUp も抑制
+            if _repost_pending is not None:
+                px, py = _repost_pending
+                if abs(x - px) < 2 and abs(y - py) < 2:
+                    return None
+
         return event
 
 
 # ---------------------------------------------------------------------------
-# ボタン候補判定 (callback 内 — 純粋な計算のみ、API呼び出しなし)
+# バックグラウンド処理
 # ---------------------------------------------------------------------------
 
 
-def _might_be_send_button(event: Any) -> bool:
-    """クリックが送信ボタン付近かどうかを軽量に判定する。"""
-    loc = Quartz.CGEventGetLocation(event)
-    x, y = float(loc.x), float(loc.y)
-
-    # キャッシュがあれば半径内かチェック
-    if _cached_btn_x >= 0:
-        dx, dy = x - _cached_btn_x, y - _cached_btn_y
-        return dx * dx + dy * dy <= _HIT_RADIUS * _HIT_RADIUS
-
-    # キャッシュなし: 画面下部のクリックのみ抑制 (送信ボタンは常に下部にある)
-    screen = NSScreen.mainScreen()
-    if screen is None:
-        return True
-    screen_h = float(screen.frame().size.height)
-    return y >= screen_h * (1.0 - _BOTTOM_RATIO)
-
-
-# ---------------------------------------------------------------------------
-# Click processing — バックグラウンドスレッドで実行
-# ---------------------------------------------------------------------------
-
-
-def _process_click(x: float, y: float) -> None:
-    global _cached_btn_x, _cached_btn_y
-
-    if not is_send_button_at(x, y):
-        _main_ops.performSelectorOnMainThread_withObject_waitUntilDone_("repost:", {"x": x, "y": y}, False)
-        return
-
-    # 送信ボタン確定 — 座標をキャッシュ
-    _cached_btn_x, _cached_btn_y = x, y
-
+def _process_send(x: float, y: float) -> None:
     text = None
     for _ in range(_RETRY_COUNT):
         text = get_text_near_position(x, y)
@@ -158,35 +105,34 @@ def _process_click(x: float, y: float) -> None:
         time.sleep(_RETRY_INTERVAL)
 
     if not text:
-        print("[DEBUG] テキスト取得失敗")
-        _main_ops.performSelectorOnMainThread_withObject_waitUntilDone_("repost:", {"x": x, "y": y}, False)
+        print("[DEBUG] テキスト取得失敗 — 送信を続行します")
+        _do_repost(x, y)
         return
 
     matched = [kw for kw in WARN_KEYWORDS if kw in text]
     if matched:
         print(f"[INFO] キーワード検出: {matched} — 送信をブロック")
-        _main_ops.performSelectorOnMainThread_withObject_waitUntilDone_(
-            "warn:", {"text": text, "matched": matched}, True
-        )
+        _copy_to_clipboard(text)
+        _show_keyword_warning(matched)
     else:
-        _main_ops.performSelectorOnMainThread_withObject_waitUntilDone_(
-            "copyAndRepost:", {"text": text, "x": x, "y": y}, False
-        )
+        _copy_to_clipboard(text)
+        print("[INFO] クリップボードにコピー済み — 送信を続行します")
+        _do_repost(x, y)
+
+
+def _do_repost(x: float, y: float) -> None:
+    global _repost_pending
+    _repost_pending = (x, y)
+    point = Quartz.CGPointMake(x, y)
+    down = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventLeftMouseDown, point, Quartz.kCGMouseButtonLeft)
+    up = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventLeftMouseUp, point, Quartz.kCGMouseButtonLeft)
+    Quartz.CGEventPost(Quartz.kCGHIDEventTap, down)
+    Quartz.CGEventPost(Quartz.kCGHIDEventTap, up)
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _repost_click(x: float, y: float) -> None:
-    global _repost_count
-    _repost_count += 1
-    point = Quartz.CGPointMake(x, y)
-    down = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventLeftMouseDown, point, Quartz.kCGMouseButtonLeft)
-    up = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventLeftMouseUp, point, Quartz.kCGMouseButtonLeft)
-    Quartz.CGEventPost(Quartz.kCGSessionEventTap, down)
-    Quartz.CGEventPost(Quartz.kCGSessionEventTap, up)
 
 
 def _is_slack_frontmost() -> bool:
