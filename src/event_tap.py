@@ -6,9 +6,9 @@ import time
 from typing import Any
 
 import Quartz
-from AppKit import NSEvent, NSPasteboard, NSPasteboardTypeString, NSWorkspace
+from AppKit import NSEvent, NSPasteboard, NSPasteboardTypeString
 
-from accessibility import SLACK_BUNDLE_ID, get_text_near_position
+from accessibility import get_text_near_position
 from screen_capture import is_send_button_at
 
 _PREVIEW_MAX_LEN: int = 60
@@ -160,10 +160,6 @@ def _show_osascript_alert(matched: list[str]) -> None:
     )
     subprocess.run(["osascript", "-e", script], check=False)
 
-
-def _is_slack_frontmost() -> bool:
-    app = NSWorkspace.sharedWorkspace().frontmostApplication()
-    return app is not None and app.bundleIdentifier() == SLACK_BUNDLE_ID
 
 
 def _copy_to_clipboard(text: str) -> None:
