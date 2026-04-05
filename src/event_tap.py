@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 import threading
 import time
+from subprocess import DEVNULL
 from typing import Any
 
 import Quartz
@@ -210,6 +211,7 @@ def _show_osascript_alert(matched: list[str]) -> None:
         f'message "{keywords} が含まれています。\\nメッセージを修正して再度送信してください。" '
         f'buttons {{"OK"}} default button "OK"'
     )
-    subprocess.run(["osascript", "-e", script], check=False)
-    subprocess.run(["osascript", "-e", 'tell application "Slack" to activate'], check=False)
+    subprocess.run(["osascript", "-e", script], check=False, stdout=DEVNULL, stderr=DEVNULL)
+    activate = 'tell application "Slack" to activate'
+    subprocess.run(["osascript", "-e", activate], check=False, stdout=DEVNULL, stderr=DEVNULL)
 
