@@ -57,6 +57,9 @@ logger-objects = []
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
 [tool.pyright]
 typeCheckingMode = "strict"
 # pyobjc にはスタブが存在しないため、関連するエラーを抑制する

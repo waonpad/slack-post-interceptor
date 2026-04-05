@@ -60,7 +60,6 @@ def get_text_near_position(x: float, y: float) -> str | None:
 
 def _get_text_from_ax_position(app_el: Any, x: float, y: float) -> str | None:
     """指定座標のAX要素から親を遡ってテキストエリアを探す。"""
-    AS.AXUIElementCopyElementAtPosition(app_el, x, y, None)
     err, element = AS.AXUIElementCopyElementAtPosition(app_el, x, y, None)
     if err != _AX_SUCCESS or element is None:
         return None
@@ -104,8 +103,12 @@ def _search_text_area_value(element: Any, depth: int) -> str | None:
 
 def _slack_app_element() -> Any | None:
     global _cached_app_el
+    # キャッシュが有効か確認 - Slack再起動でPIDが変わった場合はエラーになる
     if _cached_app_el is not None:
-        return _cached_app_el
+        err, _ = AS.AXUIElementCopyAttributeValue(_cached_app_el, "AXRole", None)
+        if err == _AX_SUCCESS:
+            return _cached_app_el
+        _cached_app_el = None
     for app in NSWorkspace.sharedWorkspace().runningApplications():
         if app.bundleIdentifier() == SLACK_BUNDLE_ID:
             app_el = AS.AXUIElementCreateApplication(app.processIdentifier())
@@ -113,4 +116,3 @@ def _slack_app_element() -> Any | None:
             _cached_app_el = app_el
             return app_el
     return None
-
