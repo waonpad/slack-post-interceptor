@@ -6,12 +6,11 @@ import time
 from typing import Any
 
 import Quartz
-from AppKit import NSEvent, NSPasteboard, NSPasteboardTypeString, NSWorkspace
+from AppKit import NSEvent, NSWorkspace
 
 from accessibility import SLACK_BUNDLE_ID, get_focused_text, get_text_near_position
 from screen_capture import is_send_button_at
 
-_PREVIEW_MAX_LEN: int = 60
 _RETRY_INTERVAL = 0.05
 _RETRY_COUNT = 3
 _HOVER_INTERVAL = 0.2
@@ -56,7 +55,7 @@ class EventTapHandler:
         source = Quartz.CFMachPortCreateRunLoopSource(None, self._tap, 0)
         Quartz.CFRunLoopAddSource(Quartz.CFRunLoopGetMain(), source, Quartz.kCFRunLoopCommonModes)
         Quartz.CGEventTapEnable(self._tap, True)
-        print("[INFO] 監視開始 — Slack 送信ボタンをクリックするとコピー後に送信します")
+        print("[INFO] 監視開始 — Slack 送信ボタンをクリックするとキーワードをチェックします")
 
     def _callback(self, _proxy: Any, event_type: int, event: Any, _refcon: Any) -> Any:
         if event_type == Quartz.kCGEventTapDisabledByTimeout:
@@ -155,11 +154,9 @@ def _process_send(x: float, y: float) -> None:
     matched = [kw for kw in WARN_KEYWORDS if kw in text]
     if matched:
         print(f"[INFO] キーワード検出: {matched} — 送信をブロック")
-        _copy_to_clipboard(text)
         _show_osascript_alert(matched)
     else:
-        _copy_to_clipboard(text)
-        print("[INFO] クリップボードにコピー済み — 送信を続行します")
+        print("[INFO] キーワードなし — 送信を続行します")
         _do_repost(x, y)
 
 
@@ -181,11 +178,9 @@ def _process_send_keyboard() -> None:
     matched = [kw for kw in WARN_KEYWORDS if kw in text]
     if matched:
         print(f"[INFO] キーワード検出: {matched} — 送信をブロック")
-        _copy_to_clipboard(text)
         _show_osascript_alert(matched)
     else:
-        _copy_to_clipboard(text)
-        print("[INFO] クリップボードにコピー済み — 送信を続行します")
+        print("[INFO] キーワードなし — 送信を続行します")
         _repost_enter()
 
 
@@ -230,9 +225,3 @@ def _show_osascript_alert(matched: list[str]) -> None:
     subprocess.run(["osascript", "-e", 'tell application "Slack" to activate'], check=False)
 
 
-def _copy_to_clipboard(text: str) -> None:
-    pb = NSPasteboard.generalPasteboard()
-    pb.clearContents()
-    pb.setString_forType_(text, NSPasteboardTypeString)
-    preview = text[:_PREVIEW_MAX_LEN] + ("…" if len(text) > _PREVIEW_MAX_LEN else "")
-    print(f"[COPY] {preview}")
