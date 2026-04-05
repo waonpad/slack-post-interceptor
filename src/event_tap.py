@@ -1,20 +1,12 @@
 from __future__ import annotations
 
+import subprocess
 import threading
 import time
 from typing import Any
 
 import Quartz
-from AppKit import (
-    NSAlert,
-    NSApplication,
-    NSEvent,
-    NSPasteboard,
-    NSPasteboardTypeString,
-    NSWarningAlertStyle,
-    NSWorkspace,
-)
-from Foundation import NSObject
+from AppKit import NSEvent, NSPasteboard, NSPasteboardTypeString, NSWorkspace
 
 from accessibility import SLACK_BUNDLE_ID, get_text_near_position
 from screen_capture import is_send_button_at
@@ -22,12 +14,11 @@ from screen_capture import is_send_button_at
 _PREVIEW_MAX_LEN: int = 60
 _RETRY_INTERVAL = 0.05
 _RETRY_COUNT = 3
-_HOVER_INTERVAL = 0.08   # ホバーポーリング間隔 (秒)
+_HOVER_INTERVAL = 0.08
 _REPOST_TOLERANCE: float = 2.0
 
 WARN_KEYWORDS: tuple[str, ...] = ("確認", "対応")
 
-# バックグラウンドポーラーが更新するフラグ: マウスが送信ボタン上にあるか
 _over_btn: bool = False
 _repost_pending: tuple[float, float] | None = None
 
@@ -85,10 +76,7 @@ class EventTapHandler:
                 _repost_pending = None
                 return event
 
-        if not _is_slack_frontmost():
-            return event
-
-        # フラグ読み取りのみ — API呼び出しなし (~0.001ms)
+        # フラグ読み取りのみ — API 呼び出しなし
         if not _over_btn:
             return event
 
@@ -98,22 +86,24 @@ class EventTapHandler:
 
 # ---------------------------------------------------------------------------
 # ホバーポーラー (バックグラウンドスレッド)
-# is_send_button_at はここから呼ぶ — コールバック外なのでデッドロックしない
 # ---------------------------------------------------------------------------
 
 
 def _hover_poller() -> None:
     global _over_btn
     while True:
-        if _is_slack_frontmost():
+        try:
             pos = NSEvent.mouseLocation()
-            mx, my = float(pos.x), float(pos.y)
+            mx = float(pos.x)
+            # AppKit 座標 (y: 下原点) → CG 座標 (y: 上原点)
+            screen_h = float(Quartz.CGDisplayBounds(Quartz.CGMainDisplayID()).size.height)
+            my = screen_h - float(pos.y)
             result = is_send_button_at(mx, my)
             if result != _over_btn:
-                print(f"[DEBUG] hover x={mx:.0f} y={my:.0f} over_btn={result}")
+                print(f"[DEBUG] over_btn: {_over_btn} -> {result}  x={mx:.0f} cg_y={my:.0f}")
             _over_btn = result
-        else:
-            _over_btn = False
+        except Exception as e:
+            print(f"[ERROR] hover_poller: {e}")
         time.sleep(_HOVER_INTERVAL)
 
 
@@ -139,10 +129,7 @@ def _process_send(x: float, y: float) -> None:
     if matched:
         print(f"[INFO] キーワード検出: {matched} — 送信をブロック")
         _copy_to_clipboard(text)
-        # NSAlert はメインスレッドのみ — performSelectorOnMainThread で委譲
-        _alert_bridge.performSelectorOnMainThread_withObject_waitUntilDone_(
-            "showWarning:", matched, True
-        )
+        _show_osascript_alert(matched)
     else:
         _copy_to_clipboard(text)
         print("[INFO] クリップボードにコピー済み — 送信を続行します")
@@ -152,14 +139,6 @@ def _process_send(x: float, y: float) -> None:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-class _AlertBridge(NSObject):
-    def showWarning_(self, matched: Any) -> None:
-        _show_keyword_warning(list(matched))
-
-
-_alert_bridge = _AlertBridge.alloc().init()
 
 
 def _do_repost(x: float, y: float) -> None:
@@ -172,20 +151,19 @@ def _do_repost(x: float, y: float) -> None:
     Quartz.CGEventPost(Quartz.kCGHIDEventTap, up)
 
 
+def _show_osascript_alert(matched: list[str]) -> None:
+    keywords = "、".join(f"「{kw}」" for kw in matched)
+    script = (
+        f'display alert "送信をブロックしました" '
+        f'message "{keywords} が含まれています。\\nメッセージを修正して再度送信してください。" '
+        f'buttons {{"OK"}} default button "OK"'
+    )
+    subprocess.run(["osascript", "-e", script], check=False)
+
+
 def _is_slack_frontmost() -> bool:
     app = NSWorkspace.sharedWorkspace().frontmostApplication()
     return app is not None and app.bundleIdentifier() == SLACK_BUNDLE_ID
-
-
-def _show_keyword_warning(matched: list[str]) -> None:
-    keywords = "、".join(f"「{kw}」" for kw in matched)
-    alert = NSAlert.alloc().init()
-    alert.setAlertStyle_(NSWarningAlertStyle)
-    alert.setMessageText_("送信をブロックしました")
-    alert.setInformativeText_(f"{keywords} が含まれています。\nメッセージを修正して再度送信してください。")
-    alert.addButtonWithTitle_("OK")
-    NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
-    alert.runModal()
 
 
 def _copy_to_clipboard(text: str) -> None:
