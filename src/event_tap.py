@@ -5,6 +5,7 @@ from typing import Any
 
 import Quartz
 from AppKit import NSAlert, NSApplication, NSPasteboard, NSPasteboardTypeString, NSWarningAlertStyle, NSWorkspace
+from Foundation import NSObject, NSRunLoop, NSRunLoopCommonModes, NSTimer
 
 from accessibility import SLACK_BUNDLE_ID, get_text_near_position
 from screen_capture import is_send_button_at
@@ -14,6 +15,37 @@ _RETRY_INTERVAL = 0.05
 _RETRY_COUNT = 3
 
 WARN_KEYWORDS: tuple[str, ...] = ("確認", "対応")
+
+# callback から次 RunLoop へ渡すキュー
+_click_queue: list[dict[str, Any]] = []
+# _repost_click() で投げた mouseDown をスキップするカウンタ
+_repost_count: int = 0
+
+
+def _schedule_timer(target: Any, selector: str) -> None:
+    """NSRunLoopCommonModes でタイマーを登録する。
+
+    scheduledTimerWithTimeInterval は NSDefaultRunLoopMode のみで発火し、
+    EventTap コールバック中 (NSEventTrackingRunLoopMode) から投げると発火しないため
+    NSRunLoop.addTimer_forMode_ で CommonModes に登録する。
+    """
+    timer = NSTimer.timerWithTimeInterval_target_selector_userInfo_repeats_(
+        0.0, target, selector, None, False
+    )
+    NSRunLoop.mainRunLoop().addTimer_forMode_(timer, NSRunLoopCommonModes)
+
+
+class _ClickProcessor(NSObject):
+    def processClick_(self, _timer: Any) -> None:
+        try:
+            if _click_queue:
+                info = _click_queue.pop(0)
+                _process_click(info["x"], info["y"])
+        except Exception as e:
+            print(f"[ERROR] クリック処理エラー: {e}")
+
+
+_click_processor = _ClickProcessor.alloc().init()
 
 
 class EventTapHandler:
@@ -26,7 +58,7 @@ class EventTapHandler:
         self._tap = Quartz.CGEventTapCreate(
             Quartz.kCGSessionEventTap,
             Quartz.kCGHeadInsertEventTap,
-            Quartz.kCGEventTapOptionListenOnly,
+            Quartz.kCGEventTapOptionDefault,  # アクティブタップ: イベントを抑制できる
             mask,
             self._callback,
             None,
@@ -43,42 +75,70 @@ class EventTapHandler:
         print("[INFO] 監視開始 — Slack 送信ボタンをクリックするとコピー後に送信します")
 
     def _callback(self, _proxy: Any, event_type: int, event: Any, _refcon: Any) -> Any:
+        global _repost_count
+        if event_type == Quartz.kCGEventTapDisabledByTimeout:
+            print("[WARN] EventTap タイムアウト — 再有効化します")
+            Quartz.CGEventTapEnable(self._tap, True)
+            return None
         if event_type == Quartz.kCGEventLeftMouseDown:
-            self._handle_mouse_down(event)
+            if _repost_count > 0:
+                _repost_count -= 1
+                return event  # 再送信イベントはそのまま通す
+            if _is_slack_frontmost():
+                loc = Quartz.CGEventGetLocation(event)
+                _click_queue.append({"x": float(loc.x), "y": float(loc.y)})
+                _schedule_timer(_click_processor, "processClick:")
+                return None  # いったん抑制し、次 RunLoop で判定
         return event
 
-    def _handle_mouse_down(self, event: Any) -> None:
-        if not _is_slack_frontmost():
-            return
 
-        loc = Quartz.CGEventGetLocation(event)
-        x, y = float(loc.x), float(loc.y)
+# ---------------------------------------------------------------------------
+# Click processing (callback の外で実行 — タイムアウト対象外)
+# ---------------------------------------------------------------------------
 
-        if not is_send_button_at(x, y):
-            return
 
-        text = None
-        for _ in range(_RETRY_COUNT):
-            text = get_text_near_position(x, y)
-            if text:
-                break
-            time.sleep(_RETRY_INTERVAL)
+def _process_click(x: float, y: float) -> None:
+    if not is_send_button_at(x, y):
+        _repost_click(x, y)
+        return
 
-        if not text:
-            print("[DEBUG] テキスト取得失敗")
-            return
+    text = None
+    for _ in range(_RETRY_COUNT):
+        text = get_text_near_position(x, y)
+        if text:
+            break
+        time.sleep(_RETRY_INTERVAL)
 
+    if not text:
+        print("[DEBUG] テキスト取得失敗")
+        _repost_click(x, y)
+        return
+
+    matched = [kw for kw in WARN_KEYWORDS if kw in text]
+    if matched:
+        print(f"[INFO] キーワード検出: {matched} — 送信をブロック")
         _copy_to_clipboard(text)
-        print("[INFO] クリップボードにコピー済み — 送信を続行します")
+        _show_keyword_warning(matched)
+        return
 
-        matched = [kw for kw in WARN_KEYWORDS if kw in text]
-        if matched:
-            _show_keyword_warning(matched)
+    _copy_to_clipboard(text)
+    print("[INFO] クリップボードにコピー済み — 送信を続行します")
+    _repost_click(x, y)
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _repost_click(x: float, y: float) -> None:
+    global _repost_count
+    _repost_count += 1
+    point = Quartz.CGPointMake(x, y)
+    down = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventLeftMouseDown, point, Quartz.kCGMouseButtonLeft)
+    up = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventLeftMouseUp, point, Quartz.kCGMouseButtonLeft)
+    Quartz.CGEventPost(Quartz.kCGSessionEventTap, down)
+    Quartz.CGEventPost(Quartz.kCGSessionEventTap, up)
 
 
 def _is_slack_frontmost() -> bool:
@@ -90,8 +150,8 @@ def _show_keyword_warning(matched: list[str]) -> None:
     keywords = "、".join(f"「{kw}」" for kw in matched)
     alert = NSAlert.alloc().init()
     alert.setAlertStyle_(NSWarningAlertStyle)
-    alert.setMessageText_("曖昧な表現が含まれています")
-    alert.setInformativeText_(f"{keywords} が含まれています。意図が明確か確かめてください。")
+    alert.setMessageText_("送信をブロックしました")
+    alert.setInformativeText_(f"{keywords} が含まれています。\nメッセージを修正して再度送信してください。")
     alert.addButtonWithTitle_("OK")
     NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
     alert.runModal()
