@@ -39,8 +39,10 @@ task start
 
 ## バックグラウンド実行
 
+ログは `logs/app.log` に自動保存されます（ローテーション: 1MB × 3世代）。
+
 ```bash
-nohup uv run src/main.py > ~/slack-post-interceptor.log 2>&1 &
+nohup uv run src/main.py &
 echo $! > /tmp/slack-post-interceptor.pid
 ```
 

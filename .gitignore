@@ -4,6 +4,8 @@
 # 追加
 .env.yml
 .env.*.yml
+logs/*.log
+logs/*.log.*
 
 ### Django ###
 *.log
