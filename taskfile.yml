@@ -43,3 +43,10 @@ tasks:
       - t
     cmds:
       - pyright
+
+  start:
+    desc: Slack Post Interceptor を起動する
+    aliases:
+      - s
+    cmds:
+      - uv run python main.py

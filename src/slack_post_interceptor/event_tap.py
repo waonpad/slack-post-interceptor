@@ -1,0 +1,84 @@
+from __future__ import annotations
+
+from typing import Any
+
+import Quartz
+from AppKit import NSPasteboard, NSPasteboardTypeString, NSWorkspace
+
+from slack_post_interceptor.accessibility import get_text_near_position
+from slack_post_interceptor.screen_capture import get_pixel_color, has_send_button_nearby, is_button_outside_color
+
+_SLACK_BUNDLE_ID = "com.tinyspeck.slackmacgap"
+
+
+class EventTapHandler:
+    def __init__(self) -> None:
+        self._tap: Any = None
+
+    def start(self) -> None:
+        mask = Quartz.CGEventMaskBit(Quartz.kCGEventLeftMouseDown)
+
+        self._tap = Quartz.CGEventTapCreate(
+            Quartz.kCGSessionEventTap,
+            Quartz.kCGHeadInsertEventTap,
+            Quartz.kCGEventTapOptionListenOnly,
+            mask,
+            self._callback,
+            None,
+        )
+
+        if self._tap is None:
+            print("[ERROR] CGEventTap の作成に失敗しました。アクセシビリティ権限を確認してください。")
+            raise SystemExit(1)
+
+        source = Quartz.CFMachPortCreateRunLoopSource(None, self._tap, 0)
+        Quartz.CFRunLoopAddSource(Quartz.CFRunLoopGetMain(), source, Quartz.kCFRunLoopCommonModes)
+        Quartz.CGEventTapEnable(self._tap, True)
+
+        print("[INFO] 監視開始 — Slack 送信ボタンをクリックするとコピー後に送信します")
+
+    def _callback(self, proxy: Any, event_type: int, event: Any, refcon: Any) -> Any:
+        if event_type == Quartz.kCGEventLeftMouseDown:
+            self._handle_mouse_down(event)
+        return event
+
+    def _handle_mouse_down(self, event: Any) -> None:
+        if not _is_slack_frontmost():
+            return
+
+        loc = Quartz.CGEventGetLocation(event)
+        x, y = float(loc.x), float(loc.y)
+
+        # クリック座標がボタン外の暗い色なら即スキップ（エリアスキャンより前）
+        color = get_pixel_color(x, y)
+        if color is not None and is_button_outside_color(*color):
+            return
+
+        # 周囲に緑のボタン色があるか確認
+        if not has_send_button_nearby(x, y):
+            return
+
+        text = get_text_near_position(x, y)
+        if not text:
+            print("[DEBUG] テキスト取得失敗")
+            return
+
+        _copy_to_clipboard(text)
+        print("[INFO] クリップボードにコピー済み — 送信を続行します")
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _is_slack_frontmost() -> bool:
+    app = NSWorkspace.sharedWorkspace().frontmostApplication()
+    return app is not None and app.bundleIdentifier() == _SLACK_BUNDLE_ID
+
+
+def _copy_to_clipboard(text: str) -> None:
+    pb = NSPasteboard.generalPasteboard()
+    pb.clearContents()
+    pb.setString_forType_(text, NSPasteboardTypeString)
+    preview = text[:60] + ("…" if len(text) > 60 else "")
+    print(f"[COPY] {preview}")
