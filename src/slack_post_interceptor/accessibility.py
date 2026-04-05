@@ -8,14 +8,10 @@ from AppKit import NSWorkspace
 _AX_SUCCESS = 0
 _SLACK_BUNDLE_ID = "com.tinyspeck.slackmacgap"
 
-_cached_app_el: Any = None
-
-
-# ---------------------------------------------------------------------------
-# Public
-# ---------------------------------------------------------------------------
-
 _MAX_SEARCH_DEPTH: int = 8
+_MAX_PARENT_DEPTH: int = 12
+
+_cached_app_el: Any = None
 
 
 def get_text_near_position(x: float, y: float) -> str | None:
@@ -46,7 +42,7 @@ def _get_text_from_ax_position(app_el: Any, x: float, y: float) -> str | None:
         return None
 
     current = element
-    for _ in range(12):
+    for _ in range(_MAX_PARENT_DEPTH):
         err, parent = AS.AXUIElementCopyAttributeValue(current, "AXParent", None)
         if err != _AX_SUCCESS or parent is None:
             break
@@ -60,11 +56,6 @@ def _get_text_from_ax_position(app_el: Any, x: float, y: float) -> str | None:
             return text
 
     return None
-
-
-# ---------------------------------------------------------------------------
-# Internal
-# ---------------------------------------------------------------------------
 
 
 def _search_text_area_value(element: Any, depth: int) -> str | None:
@@ -85,11 +76,6 @@ def _search_text_area_value(element: Any, depth: int) -> str | None:
         if result is not None:
             return result
     return None
-
-
-# ---------------------------------------------------------------------------
-# Internal
-# ---------------------------------------------------------------------------
 
 
 def _slack_app_element() -> Any | None:
