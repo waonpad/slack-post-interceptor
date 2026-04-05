@@ -5,7 +5,15 @@ import time
 from typing import Any
 
 import Quartz
-from AppKit import NSAlert, NSApplication, NSPasteboard, NSPasteboardTypeString, NSWarningAlertStyle, NSWorkspace
+from AppKit import (
+    NSAlert,
+    NSApplication,
+    NSPasteboard,
+    NSPasteboardTypeString,
+    NSScreen,
+    NSWarningAlertStyle,
+    NSWorkspace,
+)
 from Foundation import NSObject, NSRunLoop, NSRunLoopCommonModes, NSTimer
 
 from accessibility import SLACK_BUNDLE_ID, get_text_near_position
@@ -17,12 +25,19 @@ _RETRY_COUNT = 3
 
 WARN_KEYWORDS: tuple[str, ...] = ("確認", "対応")
 
+# 送信ボタンの近辺のみ抑制するための設定
+_HIT_RADIUS: int = 30          # キャッシュヒット判定の半径 (px)
+_BOTTOM_RATIO: float = 0.25    # キャッシュがない場合、画面下部この割合のクリックのみ抑制
+
 _click_queue: list[dict[str, Any]] = []
 _repost_count: int = 0
 
+# 送信ボタン位置のキャッシュ
+_cached_btn_x: float = -1.0
+_cached_btn_y: float = -1.0
+
 
 def _schedule_timer(target: Any, selector: str) -> None:
-    """NSRunLoopCommonModes でタイマーを登録する。"""
     timer = NSTimer.timerWithTimeInterval_target_selector_userInfo_repeats_(
         0.0, target, selector, None, False
     )
@@ -30,26 +45,18 @@ def _schedule_timer(target: Any, selector: str) -> None:
 
 
 class _ClickProcessor(NSObject):
-    """NSTimer 経由で次 RunLoop にクリック処理をバックグラウンドスレッドで起動する。"""
-
     def processClick_(self, _timer: Any) -> None:
         if _click_queue:
             info = _click_queue.pop(0)
-            threading.Thread(
-                target=_process_click,
-                args=(info["x"], info["y"]),
-                daemon=True,
-            ).start()
+            threading.Thread(target=_process_click, args=(info["x"], info["y"]), daemon=True).start()
 
 
 class _MainThreadOps(NSObject):
-    """バックグラウンドスレッドからメインスレッドのUI操作を呼び出すブリッジ。"""
-
     def copyAndRepost_(self, info: Any) -> None:
         _copy_to_clipboard(info["text"])
         _repost_click(info["x"], info["y"])
 
-    def copyAndWarn_(self, info: Any) -> None:
+    def warn_(self, info: Any) -> None:
         _copy_to_clipboard(info["text"])
         _show_keyword_warning(info["matched"])
 
@@ -97,23 +104,51 @@ class EventTapHandler:
             if _repost_count > 0:
                 _repost_count -= 1
                 return event
-            if _is_slack_frontmost():
+            if _is_slack_frontmost() and _might_be_send_button(event):
                 loc = Quartz.CGEventGetLocation(event)
                 _click_queue.append({"x": float(loc.x), "y": float(loc.y)})
                 _schedule_timer(_click_processor, "processClick:")
-                return None  # 抑制してバックグラウンドで判定
+                return None  # 送信ボタン候補のみ抑制
         return event
 
 
 # ---------------------------------------------------------------------------
-# Click processing — バックグラウンドスレッドで実行 (RunLoop をブロックしない)
+# ボタン候補判定 (callback 内 — 純粋な計算のみ、API呼び出しなし)
+# ---------------------------------------------------------------------------
+
+
+def _might_be_send_button(event: Any) -> bool:
+    """クリックが送信ボタン付近かどうかを軽量に判定する。"""
+    loc = Quartz.CGEventGetLocation(event)
+    x, y = float(loc.x), float(loc.y)
+
+    # キャッシュがあれば半径内かチェック
+    if _cached_btn_x >= 0:
+        dx, dy = x - _cached_btn_x, y - _cached_btn_y
+        return dx * dx + dy * dy <= _HIT_RADIUS * _HIT_RADIUS
+
+    # キャッシュなし: 画面下部のクリックのみ抑制 (送信ボタンは常に下部にある)
+    screen = NSScreen.mainScreen()
+    if screen is None:
+        return True
+    screen_h = float(screen.frame().size.height)
+    return y >= screen_h * (1.0 - _BOTTOM_RATIO)
+
+
+# ---------------------------------------------------------------------------
+# Click processing — バックグラウンドスレッドで実行
 # ---------------------------------------------------------------------------
 
 
 def _process_click(x: float, y: float) -> None:
+    global _cached_btn_x, _cached_btn_y
+
     if not is_send_button_at(x, y):
         _main_ops.performSelectorOnMainThread_withObject_waitUntilDone_("repost:", {"x": x, "y": y}, False)
         return
+
+    # 送信ボタン確定 — 座標をキャッシュ
+    _cached_btn_x, _cached_btn_y = x, y
 
     text = None
     for _ in range(_RETRY_COUNT):
@@ -131,7 +166,7 @@ def _process_click(x: float, y: float) -> None:
     if matched:
         print(f"[INFO] キーワード検出: {matched} — 送信をブロック")
         _main_ops.performSelectorOnMainThread_withObject_waitUntilDone_(
-            "copyAndWarn:", {"text": text, "matched": matched}, True
+            "warn:", {"text": text, "matched": matched}, True
         )
     else:
         _main_ops.performSelectorOnMainThread_withObject_waitUntilDone_(
