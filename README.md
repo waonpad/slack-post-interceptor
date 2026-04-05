@@ -37,10 +37,37 @@ task start
 初回起動時、権限が未付与の場合はダイアログが表示されます。  
 **システム設定 > プライバシーとセキュリティ** でアクセシビリティと画面収録を許可してください。
 
-### 古いプロセスの終了
+## バックグラウンド実行
 
 ```bash
-ps aux | grep "main.py" | grep slack | grep -v grep | awk '{print $2}' | xargs kill
+nohup uv run src/main.py > ~/slack-post-interceptor.log 2>&1 &
+echo $! > /tmp/slack-post-interceptor.pid
+```
+
+## 停止
+
+```bash
+kill $(cat /tmp/slack-post-interceptor.pid)
+```
+
+プロセスが残っている場合は以下で一括終了できます：
+
+```bash
+ps aux | grep "slack-post-interceptor.*main.py" | grep -v grep | awk '{print $2}' | xargs kill
+```
+
+## カスタマイズ
+
+`.env` ファイルで設定を変更できます：
+
+```env
+LOG_LEVEL=INFO   # DEBUG / INFO / WARNING / ERROR
+```
+
+警告キーワードの変更は `src/event_tap.py` の `WARN_KEYWORDS` を編集してください：
+
+```python
+WARN_KEYWORDS: tuple[str, ...] = ("確認", "対応")
 ```
 
 ## 開発
@@ -71,8 +98,8 @@ src/
 **なぜスクリーンキャプチャか**  
 Slack（Electron製）のAXツリーは送信ボタン要素を安定的に返さないため、ピクセル色でボタンを検出している。
 
-**なぜ Active タップ + ホバーポーラーか**  
-Active タップのコールバック内で重いスクリーンキャプチャを行うとタイムアウトで無効化される。バックグラウンドスレッド（ホバーポーラー）が200msごとにマウス座標のピクセル色をチェックし、`_over_btn` フラグを更新する。コールバックはこのフラグを読むだけにして軽量を保つ。
+**なぜ Active タップか**  
+Active タップのコールバックは軽量に保つ必要がある（タイムアウトで無効化されるため）。Slack 内の全 mouseDown をインターセプトし、バックグラウンドスレッドで `is_send_button_at()` を実行する。送信ボタン以外のクリックは即 repost するので体感遅延はほぼない。
 
 **なぜ Cmd+Enter のみか**  
 通常の Enter はIME確定（日本語変換）にも使われるため、誤検知を避けるため Cmd+Enter のみを送信ショートカットとして監視する。
