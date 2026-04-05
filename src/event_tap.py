@@ -96,14 +96,11 @@ def _hover_poller() -> None:
     global _over_btn
     while True:
         try:
-            if _is_slack_frontmost():
-                pos = NSEvent.mouseLocation()
-                mx = float(pos.x)
-                screen_h = float(Quartz.CGDisplayBounds(Quartz.CGMainDisplayID()).size.height)
-                my = screen_h - float(pos.y)
-                _over_btn = is_send_button_at(mx, my)
-            else:
-                _over_btn = False
+            pos = NSEvent.mouseLocation()
+            mx = float(pos.x)
+            screen_h = float(Quartz.CGDisplayBounds(Quartz.CGMainDisplayID()).size.height)
+            my = screen_h - float(pos.y)
+            _over_btn = is_send_button_at(mx, my)
         except Exception as e:
             print(f"[ERROR] hover_poller: {e}")
         time.sleep(_HOVER_INTERVAL)
@@ -121,6 +118,8 @@ def _process_send(x: float, y: float) -> None:
         if text:
             break
         time.sleep(_RETRY_INTERVAL)
+
+    print(f"[DEBUG] text={repr(text[:20]) if text else None}")
 
     if not text:
         print("[DEBUG] テキスト取得失敗 — 送信を続行します")
@@ -166,6 +165,7 @@ def _show_osascript_alert(matched: list[str]) -> None:
         f'buttons {{"OK"}} default button "OK"'
     )
     subprocess.run(["osascript", "-e", script], check=False)
+    subprocess.run(["osascript", "-e", 'tell application "Slack" to activate'], check=False)
 
 
 def _copy_to_clipboard(text: str) -> None:
