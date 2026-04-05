@@ -5,6 +5,9 @@
 .env.yml
 .env.*.yml
 
+nohup.out
+pid.txt
+
 ### Django ###
 *.log
 # pythonのTimedRotatingFileHandlerはファイル末尾に日付を付けるので、それらを無視する

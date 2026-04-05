@@ -39,17 +39,16 @@ task start
 
 ## バックグラウンド実行
 
-ログは `logs/app.log` に自動保存されます（ローテーション: 1MB × 3世代）。
-
 ```bash
 nohup uv run src/main.py &
-echo $! > /tmp/slack-post-interceptor.pid
+echo $! > pid.txt
 ```
 
 ## 停止
 
 ```bash
-kill $(cat /tmp/slack-post-interceptor.pid)
+kill $(cat pid.txt) &&
+rm pid.txt
 ```
 
 プロセスが残っている場合は以下で一括終了できます：
