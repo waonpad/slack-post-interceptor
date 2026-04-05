@@ -6,7 +6,7 @@ import ApplicationServices as AS
 from AppKit import NSWorkspace
 
 _AX_SUCCESS = 0
-_SLACK_BUNDLE_ID = "com.tinyspeck.slackmacgap"
+SLACK_BUNDLE_ID = "com.tinyspeck.slackmacgap"
 
 _MAX_SEARCH_DEPTH: int = 8
 _MAX_PARENT_DEPTH: int = 12
@@ -83,7 +83,7 @@ def _slack_app_element() -> Any | None:
     if _cached_app_el is not None:
         return _cached_app_el
     for app in NSWorkspace.sharedWorkspace().runningApplications():
-        if app.bundleIdentifier() == _SLACK_BUNDLE_ID:
+        if app.bundleIdentifier() == SLACK_BUNDLE_ID:
             app_el = AS.AXUIElementCreateApplication(app.processIdentifier())
             AS.AXUIElementSetAttributeValue(app_el, "AXEnhancedUserInterface", True)
             _cached_app_el = app_el

@@ -6,11 +6,10 @@ from typing import Any
 import Quartz
 from AppKit import NSPasteboard, NSPasteboardTypeString, NSWorkspace
 
-from slack_post_interceptor.accessibility import get_text_near_position
-from slack_post_interceptor.screen_capture import get_pixel_color, has_send_button_nearby, is_button_outside_color
+from slack_post_interceptor.accessibility import SLACK_BUNDLE_ID, get_text_near_position
+from slack_post_interceptor.screen_capture import is_send_button_at
 
 _PREVIEW_MAX_LEN: int = 60
-_SLACK_BUNDLE_ID = "com.tinyspeck.slackmacgap"
 _RETRY_INTERVAL = 0.05
 _RETRY_COUNT = 3
 
@@ -53,11 +52,7 @@ class EventTapHandler:
         loc = Quartz.CGEventGetLocation(event)
         x, y = float(loc.x), float(loc.y)
 
-        color = get_pixel_color(x, y)
-        if color is not None and is_button_outside_color(*color):
-            return
-
-        if not has_send_button_nearby(x, y):
+        if not is_send_button_at(x, y):
             return
 
         text = None
@@ -82,7 +77,7 @@ class EventTapHandler:
 
 def _is_slack_frontmost() -> bool:
     app = NSWorkspace.sharedWorkspace().frontmostApplication()
-    return app is not None and app.bundleIdentifier() == _SLACK_BUNDLE_ID
+    return app is not None and app.bundleIdentifier() == SLACK_BUNDLE_ID
 
 
 def _copy_to_clipboard(text: str) -> None:
