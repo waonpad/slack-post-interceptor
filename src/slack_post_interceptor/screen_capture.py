@@ -6,7 +6,7 @@ from pathlib import Path
 
 import Quartz
 
-_CONFIG_PATH = Path.home() / ".config" / "slack-post-interceptor" / "button_color.json"
+_CONFIG_PATH = Path(__file__).parent.parent.parent / "button_color.json"
 _DEFAULT_RANGE = {"r": (0, 160), "g": (130, 255), "b": (50, 220), "g_minus_r_min": 30}
 _OUTSIDE_COLOR_MAX: int = 120  # ボタン外の暗い背景色の最大輝度値
 
