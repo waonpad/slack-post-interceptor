@@ -22,6 +22,30 @@ def get_send_button_rect() -> tuple[float, float, float, float] | None:
     return _find_send_button(app_el)
 
 
+def get_focused_text() -> str | None:
+    """フォーカス中のAX要素からテキストを取得する。キーボード送信用。"""
+    app_el = _slack_app_element()
+    if app_el is None:
+        return None
+    err, focused = AS.AXUIElementCopyAttributeValue(app_el, "AXFocusedUIElement", None)
+    if err != _AX_SUCCESS or focused is None:
+        return None
+    # フォーカス要素自身またはその祖先のAXTextAreaを探す
+    current = focused
+    for _ in range(_MAX_PARENT_DEPTH):
+        text = _search_text_area_value(current, depth=0)
+        if text:
+            return text
+        err, parent = AS.AXUIElementCopyAttributeValue(current, "AXParent", None)
+        if err != _AX_SUCCESS or parent is None:
+            break
+        err2, role = AS.AXUIElementCopyAttributeValue(parent, "AXRole", None)
+        if err2 == _AX_SUCCESS and role in ("AXWebArea", "AXScrollArea"):
+            break
+        current = parent
+    return None
+
+
 def get_text_near_position(x: float, y: float) -> str | None:
     """クリック座標付近のテキストエリアからテキストを取得する。フォーカス状態に依存しない。"""
     app_el = _slack_app_element()

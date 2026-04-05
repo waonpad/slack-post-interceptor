@@ -8,7 +8,7 @@ from typing import Any
 import Quartz
 from AppKit import NSEvent, NSPasteboard, NSPasteboardTypeString, NSWorkspace
 
-from accessibility import SLACK_BUNDLE_ID, get_text_near_position
+from accessibility import SLACK_BUNDLE_ID, get_focused_text, get_text_near_position
 from screen_capture import is_send_button_at
 
 _PREVIEW_MAX_LEN: int = 60
@@ -19,8 +19,14 @@ _REPOST_TOLERANCE: float = 2.0
 
 WARN_KEYWORDS: tuple[str, ...] = ("確認", "対応")
 
+_KEYCODE_RETURN = 36
+_KEYCODE_NUMPAD_ENTER = 76
+_FLAG_SHIFT = Quartz.kCGEventFlagMaskShift
+_FLAG_CMD = Quartz.kCGEventFlagMaskCommand
+
 _over_btn: bool = False
 _repost_pending: tuple[float, float] | None = None
+_enter_repost_pending: bool = False
 
 
 class EventTapHandler:
@@ -33,6 +39,7 @@ class EventTapHandler:
         mask = (
             Quartz.CGEventMaskBit(Quartz.kCGEventLeftMouseDown)
             | Quartz.CGEventMaskBit(Quartz.kCGEventLeftMouseUp)
+            | Quartz.CGEventMaskBit(Quartz.kCGEventKeyDown)
         )
         self._tap = Quartz.CGEventTapCreate(
             Quartz.kCGSessionEventTap,
@@ -52,16 +59,35 @@ class EventTapHandler:
         print("[INFO] 監視開始 — Slack 送信ボタンをクリックするとコピー後に送信します")
 
     def _callback(self, _proxy: Any, event_type: int, event: Any, _refcon: Any) -> Any:
-        global _repost_pending
-
         if event_type == Quartz.kCGEventTapDisabledByTimeout:
             print("[WARN] EventTap タイムアウト — 再有効化します")
             Quartz.CGEventTapEnable(self._tap, True)
             return None
 
+        if event_type == Quartz.kCGEventKeyDown:
+            return self._handle_key(event)
+
         loc = Quartz.CGEventGetLocation(event)
         x, y = float(loc.x), float(loc.y)
+        return self._handle_mouse(event_type, event, x, y)
 
+    def _handle_key(self, event: Any) -> Any:
+        global _enter_repost_pending
+        keycode = Quartz.CGEventGetIntegerValueField(event, Quartz.kCGKeyboardEventKeycode)
+        flags = Quartz.CGEventGetFlags(event)
+        is_enter = keycode in (_KEYCODE_RETURN, _KEYCODE_NUMPAD_ENTER)
+        is_cmd_enter = is_enter and bool(flags & _FLAG_CMD) and not (flags & _FLAG_SHIFT)
+        if is_cmd_enter:
+            if _enter_repost_pending:
+                _enter_repost_pending = False
+                return event
+            if _is_slack_frontmost():
+                threading.Thread(target=_process_send_keyboard, daemon=True).start()
+                return None
+        return event
+
+    def _handle_mouse(self, event_type: int, event: Any, x: float, y: float) -> Any:
+        global _repost_pending
         if event_type == Quartz.kCGEventLeftMouseUp:
             if _repost_pending is not None:
                 px, py = _repost_pending
@@ -137,6 +163,32 @@ def _process_send(x: float, y: float) -> None:
         _do_repost(x, y)
 
 
+def _process_send_keyboard() -> None:
+    text = None
+    for _ in range(_RETRY_COUNT):
+        text = get_focused_text()
+        if text:
+            break
+        time.sleep(_RETRY_INTERVAL)
+
+    print(f"[DEBUG] keyboard text={repr(text[:20]) if text else None}")
+
+    if not text:
+        print("[DEBUG] テキスト取得失敗 — 送信を続行します")
+        _repost_enter()
+        return
+
+    matched = [kw for kw in WARN_KEYWORDS if kw in text]
+    if matched:
+        print(f"[INFO] キーワード検出: {matched} — 送信をブロック")
+        _copy_to_clipboard(text)
+        _show_osascript_alert(matched)
+    else:
+        _copy_to_clipboard(text)
+        print("[INFO] クリップボードにコピー済み — 送信を続行します")
+        _repost_enter()
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -153,6 +205,16 @@ def _do_repost(x: float, y: float) -> None:
     point = Quartz.CGPointMake(x, y)
     down = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventLeftMouseDown, point, Quartz.kCGMouseButtonLeft)
     up = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventLeftMouseUp, point, Quartz.kCGMouseButtonLeft)
+    Quartz.CGEventPost(Quartz.kCGHIDEventTap, down)
+    Quartz.CGEventPost(Quartz.kCGHIDEventTap, up)
+
+
+def _repost_enter() -> None:
+    global _enter_repost_pending
+    _enter_repost_pending = True
+    src = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemState)
+    down = Quartz.CGEventCreateKeyboardEvent(src, _KEYCODE_RETURN, True)
+    up = Quartz.CGEventCreateKeyboardEvent(src, _KEYCODE_RETURN, False)
     Quartz.CGEventPost(Quartz.kCGHIDEventTap, down)
     Quartz.CGEventPost(Quartz.kCGHIDEventTap, up)
 
