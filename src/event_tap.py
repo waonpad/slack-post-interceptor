@@ -4,7 +4,7 @@ import time
 from typing import Any
 
 import Quartz
-from AppKit import NSPasteboard, NSPasteboardTypeString, NSWorkspace
+from AppKit import NSAlert, NSPasteboard, NSPasteboardTypeString, NSWarningAlertStyle, NSWorkspace
 
 from accessibility import SLACK_BUNDLE_ID, get_text_near_position
 from screen_capture import is_send_button_at
@@ -12,6 +12,8 @@ from screen_capture import is_send_button_at
 _PREVIEW_MAX_LEN: int = 60
 _RETRY_INTERVAL = 0.05
 _RETRY_COUNT = 3
+
+WARN_KEYWORDS: tuple[str, ...] = ("確認", "対応")
 
 
 class EventTapHandler:
@@ -69,6 +71,10 @@ class EventTapHandler:
         _copy_to_clipboard(text)
         print("[INFO] クリップボードにコピー済み — 送信を続行します")
 
+        matched = [kw for kw in WARN_KEYWORDS if kw in text]
+        if matched:
+            _show_keyword_warning(matched)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -78,6 +84,16 @@ class EventTapHandler:
 def _is_slack_frontmost() -> bool:
     app = NSWorkspace.sharedWorkspace().frontmostApplication()
     return app is not None and app.bundleIdentifier() == SLACK_BUNDLE_ID
+
+
+def _show_keyword_warning(matched: list[str]) -> None:
+    keywords = "、".join(f"「{kw}」" for kw in matched)
+    alert = NSAlert.alloc().init()
+    alert.setAlertStyle_(NSWarningAlertStyle)
+    alert.setMessageText_("曖昧な表現が含まれています")
+    alert.setInformativeText_(f"{keywords} が含まれています。意図が明確か確かめてください。")
+    alert.addButtonWithTitle_("OK")
+    alert.runModal()
 
 
 def _copy_to_clipboard(text: str) -> None:
