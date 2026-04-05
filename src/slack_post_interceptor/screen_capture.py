@@ -9,8 +9,8 @@ _OUTSIDE_COLOR_MAX: int = 120  # ボタン外の暗い背景色の最大輝度�
 
 
 def get_pixel_color(x: float, y: float) -> tuple[int, int, int] | None:
-    """指定座標中心 3x3 px の平均色を返す。Screen Recording 権限が必要。"""
-    rect = Quartz.CGRectMake(x - 1, y - 1, 3, 3)
+    """指定座標のピクセル色を返す。Screen Recording 権限が必要。"""
+    rect = Quartz.CGRectMake(x, y, 1, 1)
     image = Quartz.CGWindowListCreateImage(
         rect,
         Quartz.kCGWindowListOptionOnScreenOnly,
@@ -34,8 +34,7 @@ def get_pixel_color(x: float, y: float) -> tuple[int, int, int] | None:
 
     Quartz.CGContextDrawImage(ctx, Quartz.CGRectMake(0, 0, w, h), image)
 
-    idx = 1 * bpr + 1 * 4  # 中央ピクセル
-    return (int(buf[idx]), int(buf[idx + 1]), int(buf[idx + 2]))
+    return (int(buf[0]), int(buf[1]), int(buf[2]))
 
 
 def has_send_button_nearby(x: float, y: float, radius: int = 16) -> bool:
