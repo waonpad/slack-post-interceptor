@@ -1,7 +1,7 @@
 [project]
-name = "workspace"
+name = "slack-post-interceptor"
 version = "0.1.0"
-description = "Add your description here"
+description = "Slackの投稿をインターセプトしてなんかする"
 readme = "README.md"
 required-version = ">=0.11.0"
 requires-python = ">=3.13"
@@ -52,12 +52,6 @@ ignore = [
 extend-select = ["I"]
 # https://docs.astral.sh/ruff/settings/#lint_logger-objects
 logger-objects = []
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/slack_post_interceptor"]
-
-[project.scripts]
-slack-post-interceptor = "slack_post_interceptor.__main__:main"
 
 [build-system]
 requires = ["hatchling"]
