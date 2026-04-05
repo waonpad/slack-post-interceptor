@@ -25,7 +25,7 @@ uv sync
 ## 起動
 
 ```bash
-uv run main.py
+uv run src/main.py
 # または
 task start
 ```
@@ -49,7 +49,7 @@ task type-check
 ## アーキテクチャ
 
 ```
-src/slack_post_interceptor/
+src/
 ├── __main__.py        # エントリポイント。権限チェックと起動
 ├── event_tap.py       # CGEventTap によるマウス監視・コピー処理
 ├── screen_capture.py  # スクリーンキャプチャによるボタン色判定
@@ -58,7 +58,7 @@ src/slack_post_interceptor/
 
 ### 技術的な背景
 
-**なぜ画像認識か**  
+**なぜスクリーンキャプチャか**
 Slack（Electron製）のAXツリーは送信ボタン要素を安定的に返さないため、ピクセル色でボタンを検出している。
 
 **なぜ ListenOnly タップか**  
@@ -66,3 +66,8 @@ Slack（Electron製）のAXツリーは送信ボタン要素を安定的に返�
 
 **なぜ位置ベースのAX探索か**  
 ボタンクリック時はフォーカスが移動するため `AXFocusedUIElement` が使えない。`AXUIElementCopyElementAtPosition` でクリック座標から要素を特定し、親を遡ってテキストエリアを探索している。
+
+### TODO
+
+- [ ] コピーに失敗することがある
+- [ ] ボタンの色が変わるテーマに対応

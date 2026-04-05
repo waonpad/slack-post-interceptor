@@ -5,8 +5,8 @@ import time
 import ApplicationServices as AS
 import Quartz
 
-from slack_post_interceptor.event_tap import EventTapHandler
-from slack_post_interceptor.screen_capture import check_screen_recording, request_screen_recording
+from event_tap import EventTapHandler
+from screen_capture import check_screen_recording, request_screen_recording
 
 
 def _wait_for_accessibility() -> None:

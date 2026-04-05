@@ -6,8 +6,8 @@ from typing import Any
 import Quartz
 from AppKit import NSPasteboard, NSPasteboardTypeString, NSWorkspace
 
-from slack_post_interceptor.accessibility import SLACK_BUNDLE_ID, get_text_near_position
-from slack_post_interceptor.screen_capture import is_send_button_at
+from accessibility import SLACK_BUNDLE_ID, get_text_near_position
+from screen_capture import is_send_button_at
 
 _PREVIEW_MAX_LEN: int = 60
 _RETRY_INTERVAL = 0.05
