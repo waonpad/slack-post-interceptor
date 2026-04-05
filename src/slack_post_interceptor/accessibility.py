@@ -70,7 +70,8 @@ def _search_text_area_value(element: Any, depth: int) -> str | None:
     if err == _AX_SUCCESS and role == "AXTextArea":
         err, value = AS.AXUIElementCopyAttributeValue(element, "AXValue", None)
         if err == _AX_SUCCESS and value:
-            return str(value) or None
+            text = str(value).strip()
+            return text if text else None
     err, children = AS.AXUIElementCopyAttributeValue(element, "AXChildren", None)
     if err != _AX_SUCCESS or not children:
         return None

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import Quartz
@@ -9,6 +10,8 @@ from slack_post_interceptor.accessibility import get_text_near_position
 from slack_post_interceptor.screen_capture import get_pixel_color, has_send_button_nearby, is_button_outside_color
 
 _SLACK_BUNDLE_ID = "com.tinyspeck.slackmacgap"
+_RETRY_INTERVAL = 0.05
+_RETRY_COUNT = 3
 
 
 class EventTapHandler:
@@ -49,16 +52,20 @@ class EventTapHandler:
         loc = Quartz.CGEventGetLocation(event)
         x, y = float(loc.x), float(loc.y)
 
-        # クリック座標がボタン外の暗い色なら即スキップ（エリアスキャンより前）
         color = get_pixel_color(x, y)
         if color is not None and is_button_outside_color(*color):
             return
 
-        # 周囲に緑のボタン色があるか確認
         if not has_send_button_nearby(x, y):
             return
 
-        text = get_text_near_position(x, y)
+        text = None
+        for _ in range(_RETRY_COUNT):
+            text = get_text_near_position(x, y)
+            if text:
+                break
+            time.sleep(_RETRY_INTERVAL)
+
         if not text:
             print("[DEBUG] テキスト取得失敗")
             return
@@ -82,3 +89,4 @@ def _copy_to_clipboard(text: str) -> None:
     pb.setString_forType_(text, NSPasteboardTypeString)
     preview = text[:60] + ("…" if len(text) > 60 else "")
     print(f"[COPY] {preview}")
+
