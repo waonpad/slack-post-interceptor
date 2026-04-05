@@ -7,17 +7,19 @@ from typing import Any
 import Quartz
 from AppKit import NSAlert, NSApplication, NSPasteboard, NSPasteboardTypeString, NSWarningAlertStyle, NSWorkspace
 
-from accessibility import SLACK_BUNDLE_ID, get_text_near_position
-from screen_capture import is_send_button_at
+from accessibility import SLACK_BUNDLE_ID, get_send_button_rect, get_text_near_position
 
-_REPOST_TOLERANCE: float = 2.0
 _PREVIEW_MAX_LEN: int = 60
 _RETRY_INTERVAL = 0.05
 _RETRY_COUNT = 3
+_CACHE_INTERVAL = 1.0
+_REPOST_TOLERANCE: float = 2.0
 
 WARN_KEYWORDS: tuple[str, ...] = ("確認", "対応")
 
-# 再送信待ちのクリック座標
+# AX で取得したボタン座標キャッシュ (x, y, w, h) — バックグラウンドスレッドが更新
+_btn_rect: tuple[float, float, float, float] | None = None
+# 再送信イベントを識別するフラグ
 _repost_pending: tuple[float, float] | None = None
 
 
@@ -26,11 +28,13 @@ class EventTapHandler:
         self._tap: Any = None
 
     def start(self) -> None:
+        # キャッシュ更新スレッドを起動
+        threading.Thread(target=_cache_updater, daemon=True).start()
+
         mask = (
             Quartz.CGEventMaskBit(Quartz.kCGEventLeftMouseDown)
             | Quartz.CGEventMaskBit(Quartz.kCGEventLeftMouseUp)
         )
-
         self._tap = Quartz.CGEventTapCreate(
             Quartz.kCGSessionEventTap,
             Quartz.kCGHeadInsertEventTap,
@@ -39,7 +43,6 @@ class EventTapHandler:
             self._callback,
             None,
         )
-
         if self._tap is None:
             print("[ERROR] CGEventTap の作成に失敗しました。アクセシビリティ権限を確認してください。")
             raise SystemExit(1)
@@ -47,7 +50,6 @@ class EventTapHandler:
         source = Quartz.CFMachPortCreateRunLoopSource(None, self._tap, 0)
         Quartz.CFRunLoopAddSource(Quartz.CFRunLoopGetMain(), source, Quartz.kCFRunLoopCommonModes)
         Quartz.CGEventTapEnable(self._tap, True)
-
         print("[INFO] 監視開始 — Slack 送信ボタンをクリックするとコピー後に送信します")
 
     def _callback(self, _proxy: Any, event_type: int, event: Any, _refcon: Any) -> Any:
@@ -58,42 +60,58 @@ class EventTapHandler:
             Quartz.CGEventTapEnable(self._tap, True)
             return None
 
-        if event_type == Quartz.kCGEventLeftMouseDown:
-            loc = Quartz.CGEventGetLocation(event)
-            x, y = float(loc.x), float(loc.y)
-
-            # 再送信イベントはそのまま通す
-            if _repost_pending is not None:
-                px, py = _repost_pending
-                if abs(x - px) < _REPOST_TOLERANCE and abs(y - py) < _REPOST_TOLERANCE:
-                    _repost_pending = None
-                    return event
-
-            if not _is_slack_frontmost():
-                return event
-
-            # ピクセル色判定のみ同期実行 (~10ms、タイムアウトしない)
-            if not is_send_button_at(x, y):
-                return event
-
-            # 送信ボタン確定: 抑制してバックグラウンドで処理
-            threading.Thread(target=_process_send, args=(x, y), daemon=True).start()
-            return None
+        loc = Quartz.CGEventGetLocation(event)
+        x, y = float(loc.x), float(loc.y)
 
         if event_type == Quartz.kCGEventLeftMouseUp:
-            loc = Quartz.CGEventGetLocation(event)
-            x, y = float(loc.x), float(loc.y)
-            # 再送信待ちの座標と一致する mouseUp も抑制
             if _repost_pending is not None:
                 px, py = _repost_pending
                 if abs(x - px) < _REPOST_TOLERANCE and abs(y - py) < _REPOST_TOLERANCE:
-                    return None
+                    return None  # 再送信の mouseUp を抑制
+            return event
 
-        return event
+        # mouseDown 以下
+        if _repost_pending is not None:
+            px, py = _repost_pending
+            if abs(x - px) < _REPOST_TOLERANCE and abs(y - py) < _REPOST_TOLERANCE:
+                _repost_pending = None
+                return event  # 再送信イベントを通す
+
+        if not _is_slack_frontmost():
+            return event
+
+        # コールバック内は純粋な座標比較のみ (API呼び出しなし)
+        if not _is_in_btn_rect(x, y):
+            return event
+
+        # 送信ボタン範囲内: 抑制してバックグラウンドで処理
+        threading.Thread(target=_process_send, args=(x, y), daemon=True).start()
+        return None
 
 
 # ---------------------------------------------------------------------------
-# バックグラウンド処理
+# ボタン座標キャッシュ更新 (バックグラウンドスレッド)
+# ---------------------------------------------------------------------------
+
+
+def _cache_updater() -> None:
+    global _btn_rect
+    while True:
+        rect = get_send_button_rect()
+        if rect:
+            _btn_rect = rect
+        time.sleep(_CACHE_INTERVAL)
+
+
+def _is_in_btn_rect(x: float, y: float) -> bool:
+    if _btn_rect is None:
+        return False
+    bx, by, bw, bh = _btn_rect
+    return bx <= x <= bx + bw and by <= y <= by + bh
+
+
+# ---------------------------------------------------------------------------
+# 送信処理 (バックグラウンドスレッド)
 # ---------------------------------------------------------------------------
 
 
@@ -121,6 +139,11 @@ def _process_send(x: float, y: float) -> None:
         _do_repost(x, y)
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
 def _do_repost(x: float, y: float) -> None:
     global _repost_pending
     _repost_pending = (x, y)
@@ -129,11 +152,6 @@ def _do_repost(x: float, y: float) -> None:
     up = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventLeftMouseUp, point, Quartz.kCGMouseButtonLeft)
     Quartz.CGEventPost(Quartz.kCGHIDEventTap, down)
     Quartz.CGEventPost(Quartz.kCGHIDEventTap, up)
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _is_slack_frontmost() -> bool:

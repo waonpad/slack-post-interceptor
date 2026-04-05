@@ -14,6 +14,14 @@ _MAX_PARENT_DEPTH: int = 12
 _cached_app_el: Any = None
 
 
+def get_send_button_rect() -> tuple[float, float, float, float] | None:
+    """Slack送信ボタンの画面座標 (x, y, w, h) をAXで取得する。見つからなければ None。"""
+    app_el = _slack_app_element()
+    if app_el is None:
+        return None
+    return _find_send_button(app_el)
+
+
 def get_text_near_position(x: float, y: float) -> str | None:
     """クリック座標付近のテキストエリアからテキストを取得する。フォーカス状態に依存しない。"""
     app_el = _slack_app_element()
@@ -88,4 +96,40 @@ def _slack_app_element() -> Any | None:
             AS.AXUIElementSetAttributeValue(app_el, "AXEnhancedUserInterface", True)
             _cached_app_el = app_el
             return app_el
+    return None
+
+
+def _find_send_button(app_el: Any) -> tuple[float, float, float, float] | None:
+    """AXツリーを探索して送信ボタン (AXButton, title='送信' or 'Send') の座標を返す。"""
+    err, windows = AS.AXUIElementCopyAttributeValue(app_el, "AXWindows", None)
+    if err != _AX_SUCCESS or not windows:
+        return None
+    for window in windows:
+        result = _search_button(window, depth=0)
+        if result:
+            return result
+    return None
+
+
+def _search_button(element: Any, depth: int) -> tuple[float, float, float, float] | None:
+    if depth > _MAX_SEARCH_DEPTH:
+        return None
+    err, role = AS.AXUIElementCopyAttributeValue(element, "AXRole", None)
+    if err == _AX_SUCCESS and role == "AXButton":
+        err2, title = AS.AXUIElementCopyAttributeValue(element, "AXTitle", None)
+        if err2 == _AX_SUCCESS and title in ("送信", "Send"):
+            err3, pos = AS.AXUIElementCopyAttributeValue(element, "AXPosition", None)
+            err4, size = AS.AXUIElementCopyAttributeValue(element, "AXSize", None)
+            if err3 == _AX_SUCCESS and err4 == _AX_SUCCESS and pos and size:
+                x = AS.AXValueGetValue(pos, AS.kAXValueCGPointType, None)
+                s = AS.AXValueGetValue(size, AS.kAXValueCGSizeType, None)
+                if x and s:
+                    return (float(x.x), float(x.y), float(s.width), float(s.height))
+    err, children = AS.AXUIElementCopyAttributeValue(element, "AXChildren", None)
+    if err != _AX_SUCCESS or not children:
+        return None
+    for child in children:
+        result = _search_button(child, depth + 1)
+        if result:
+            return result
     return None
