@@ -31,6 +31,11 @@ ignore = [
     "TD002", # TODOのauthorを不要にする
     "TD003", # TODOのチケットへのリンクを不要にする
     "ANN201", # 毎回関数の返り値の型を書くのは面倒なので無視する
+    "T201", # printはCLIツールとして意図的に使用
+    "N817", # ApplicationServices as AS は慣習的な略称
+    "ANN401", # pyobjcのAny型は避けられない
+    "FBT003", # pyobjcのC関数バインディングはキーワード引数不可
+    "PLW0603", # グローバルキャッシュパターン
     # "PD011", # pandasを使う場合
     # "B008", # FastAPIでDependsを使う場合
 ]
@@ -50,3 +55,10 @@ build-backend = "hatchling.build"
 
 [tool.pyright]
 typeCheckingMode = "strict"
+# pyobjc にはスタブが存在しないため、関連するエラーを抑制する
+reportMissingTypeStubs = "none"
+reportUnknownMemberType = "none"
+reportUnknownArgumentType = "none"
+reportUnknownVariableType = "none"
+reportUnknownParameterType = "none"
+reportAttributeAccessIssue = "none"

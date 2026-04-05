@@ -9,6 +9,7 @@ from AppKit import NSPasteboard, NSPasteboardTypeString, NSWorkspace
 from slack_post_interceptor.accessibility import get_text_near_position
 from slack_post_interceptor.screen_capture import get_pixel_color, has_send_button_nearby, is_button_outside_color
 
+_PREVIEW_MAX_LEN: int = 60
 _SLACK_BUNDLE_ID = "com.tinyspeck.slackmacgap"
 _RETRY_INTERVAL = 0.05
 _RETRY_COUNT = 3
@@ -40,7 +41,7 @@ class EventTapHandler:
 
         print("[INFO] 監視開始 — Slack 送信ボタンをクリックするとコピー後に送信します")
 
-    def _callback(self, proxy: Any, event_type: int, event: Any, refcon: Any) -> Any:
+    def _callback(self, _proxy: Any, event_type: int, event: Any, _refcon: Any) -> Any:
         if event_type == Quartz.kCGEventLeftMouseDown:
             self._handle_mouse_down(event)
         return event
@@ -87,6 +88,6 @@ def _copy_to_clipboard(text: str) -> None:
     pb = NSPasteboard.generalPasteboard()
     pb.clearContents()
     pb.setString_forType_(text, NSPasteboardTypeString)
-    preview = text[:60] + ("…" if len(text) > 60 else "")
+    preview = text[:_PREVIEW_MAX_LEN] + ("…" if len(text) > _PREVIEW_MAX_LEN else "")
     print(f"[COPY] {preview}")
 

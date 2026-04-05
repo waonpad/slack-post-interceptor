@@ -12,8 +12,11 @@ _CONFIG_PATH = Path.home() / ".config" / "slack-post-interceptor" / "button_colo
 _DEFAULT_RANGE = {"r": (0, 160), "g": (130, 255), "b": (50, 220), "g_minus_r_min": 30}
 
 
+_OUTSIDE_COLOR_MAX: int = 120  # ボタン外の暗い背景色の最大輝度値
+
+
 def get_pixel_color(x: float, y: float) -> tuple[int, int, int] | None:
-    """指定座標中心 3×3 px の平均色を返す。Screen Recording 権限が必要。"""
+    """指定座標中心 3x3 px の平均色を返す。Screen Recording 権限が必要。"""
     rect = Quartz.CGRectMake(x - 1, y - 1, 3, 3)
     image = Quartz.CGWindowListCreateImage(
         rect,
@@ -40,8 +43,7 @@ def get_pixel_color(x: float, y: float) -> tuple[int, int, int] | None:
 
     Quartz.CGContextDrawImage(ctx, Quartz.CGRectMake(0, 0, w, h), image)
 
-    # 中央ピクセル (1, 1)
-    idx = 1 * bpr + 1 * 4
+    idx = 1 * bpr + 1 * 4  # 中央ピクセル
     return (int(buf[idx]), int(buf[idx + 1]), int(buf[idx + 2]))
 
 
@@ -99,11 +101,11 @@ def is_send_button(r: int, g: int, b: int) -> bool:
 
 
 def is_button_outside_color(r: int, g: int, b: int) -> bool:
-    """ボタン外（Slack ダークテーマの背景・ツールバー等）の色かを判定する。
+    """ボタン外(Slack ダークテーマの背景・ツールバー等)の色かを判定する。
 
-    ボタン周囲はすべて低輝度の暗い色。ボタン内は緑または白（▶アイコン）なので除外できる。
+    ボタン周囲はすべて低輝度の暗い色。ボタン内は緑または白(▶アイコン)なので除外できる。
     """
-    return r < 120 and g < 120 and b < 120
+    return r < _OUTSIDE_COLOR_MAX and g < _OUTSIDE_COLOR_MAX and b < _OUTSIDE_COLOR_MAX
 
 
 def check_screen_recording() -> bool:
@@ -138,7 +140,7 @@ def calibrate(x: float, y: float) -> tuple[int, int, int] | None:
 def _load_color_range() -> dict:  # type: ignore[type-arg]
     if _CONFIG_PATH.exists():
         try:
-            return json.loads(_CONFIG_PATH.read_text())
-        except Exception:
+            return json.loads(_CONFIG_PATH.read_text())  # type: ignore[no-any-return]
+        except json.JSONDecodeError:
             pass
     return _DEFAULT_RANGE

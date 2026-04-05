@@ -15,13 +15,16 @@ _cached_app_el: Any = None
 # Public
 # ---------------------------------------------------------------------------
 
+_MAX_SEARCH_DEPTH: int = 8
+
+
 def get_text_near_position(x: float, y: float) -> str | None:
     """クリック座標付近のテキストエリアからテキストを取得する。フォーカス状態に依存しない。"""
     app_el = _slack_app_element()
     if app_el is None:
         return None
 
-    # まずクリック座標で試み、失敗したらボタン左側（テキスト入力エリア方向）をプローブする
+    # まずクリック座標で試み、失敗したらボタン左側(テキスト入力エリア方向)をプローブする
     for probe_x in [x] + [x - offset for offset in (60, 120, 200, 300)]:
         text = _get_text_from_ax_position(app_el, probe_x, y)
         if text:
@@ -64,14 +67,14 @@ def _get_text_from_ax_position(app_el: Any, x: float, y: float) -> str | None:
 
 def _search_text_area_value(element: Any, depth: int) -> str | None:
     """AXTextArea を再帰探索して AXValue を返す。"""
-    if depth >= 8:
+    if depth >= _MAX_SEARCH_DEPTH:
         return None
     err, role = AS.AXUIElementCopyAttributeValue(element, "AXRole", None)
     if err == _AX_SUCCESS and role == "AXTextArea":
         err, value = AS.AXUIElementCopyAttributeValue(element, "AXValue", None)
         if err == _AX_SUCCESS and value:
             text = str(value).strip()
-            return text if text else None
+            return text or None
     err, children = AS.AXUIElementCopyAttributeValue(element, "AXChildren", None)
     if err != _AX_SUCCESS or not children:
         return None
