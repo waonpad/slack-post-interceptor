@@ -6,15 +6,15 @@ import time
 from typing import Any
 
 import Quartz
-from AppKit import NSEvent, NSPasteboard, NSPasteboardTypeString
+from AppKit import NSEvent, NSPasteboard, NSPasteboardTypeString, NSWorkspace
 
-from accessibility import get_text_near_position
+from accessibility import SLACK_BUNDLE_ID, get_text_near_position
 from screen_capture import is_send_button_at
 
 _PREVIEW_MAX_LEN: int = 60
 _RETRY_INTERVAL = 0.05
 _RETRY_COUNT = 3
-_HOVER_INTERVAL = 0.08
+_HOVER_INTERVAL = 0.2
 _REPOST_TOLERANCE: float = 2.0
 
 WARN_KEYWORDS: tuple[str, ...] = ("確認", "対応")
@@ -76,7 +76,9 @@ class EventTapHandler:
                 _repost_pending = None
                 return event
 
-        # フラグ読み取りのみ — API 呼び出しなし
+        if not _is_slack_frontmost():
+            return event
+
         if not _over_btn:
             return event
 
@@ -86,6 +88,7 @@ class EventTapHandler:
 
 # ---------------------------------------------------------------------------
 # ホバーポーラー (バックグラウンドスレッド)
+# Slack フロント時のみスキャン、それ以外はフラグをリセット
 # ---------------------------------------------------------------------------
 
 
@@ -93,15 +96,14 @@ def _hover_poller() -> None:
     global _over_btn
     while True:
         try:
-            pos = NSEvent.mouseLocation()
-            mx = float(pos.x)
-            # AppKit 座標 (y: 下原点) → CG 座標 (y: 上原点)
-            screen_h = float(Quartz.CGDisplayBounds(Quartz.CGMainDisplayID()).size.height)
-            my = screen_h - float(pos.y)
-            result = is_send_button_at(mx, my)
-            if result != _over_btn:
-                print(f"[DEBUG] over_btn: {_over_btn} -> {result}  x={mx:.0f} cg_y={my:.0f}")
-            _over_btn = result
+            if _is_slack_frontmost():
+                pos = NSEvent.mouseLocation()
+                mx = float(pos.x)
+                screen_h = float(Quartz.CGDisplayBounds(Quartz.CGMainDisplayID()).size.height)
+                my = screen_h - float(pos.y)
+                _over_btn = is_send_button_at(mx, my)
+            else:
+                _over_btn = False
         except Exception as e:
             print(f"[ERROR] hover_poller: {e}")
         time.sleep(_HOVER_INTERVAL)
@@ -141,6 +143,11 @@ def _process_send(x: float, y: float) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _is_slack_frontmost() -> bool:
+    app = NSWorkspace.sharedWorkspace().frontmostApplication()
+    return app is not None and app.bundleIdentifier() == SLACK_BUNDLE_ID
+
+
 def _do_repost(x: float, y: float) -> None:
     global _repost_pending
     _repost_pending = (x, y)
@@ -159,7 +166,6 @@ def _show_osascript_alert(matched: list[str]) -> None:
         f'buttons {{"OK"}} default button "OK"'
     )
     subprocess.run(["osascript", "-e", script], check=False)
-
 
 
 def _copy_to_clipboard(text: str) -> None:
