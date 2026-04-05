@@ -6,14 +6,13 @@ import time
 from typing import Any
 
 import Quartz
-from AppKit import NSEvent, NSWorkspace
+from AppKit import NSWorkspace
 
 from accessibility import SLACK_BUNDLE_ID, get_focused_text, get_text_near_position
 from screen_capture import is_send_button_at
 
 _RETRY_INTERVAL = 0.05
 _RETRY_COUNT = 3
-_HOVER_INTERVAL = 0.05
 _REPOST_TOLERANCE: float = 2.0
 _REPOST_TIMEOUT: float = 0.5
 
@@ -24,7 +23,6 @@ _KEYCODE_NUMPAD_ENTER = 76
 _FLAG_SHIFT = Quartz.kCGEventFlagMaskShift
 _FLAG_CMD = Quartz.kCGEventFlagMaskCommand
 
-_over_btn: bool = False
 _repost_pending: tuple[float, float] | None = None
 _enter_repost_pending: bool = False
 
@@ -34,8 +32,6 @@ class EventTapHandler:
         self._tap: Any = None
 
     def start(self) -> None:
-        threading.Thread(target=_hover_poller, daemon=True).start()
-
         mask = (
             Quartz.CGEventMaskBit(Quartz.kCGEventLeftMouseDown)
             | Quartz.CGEventMaskBit(Quartz.kCGEventLeftMouseUp)
@@ -95,7 +91,7 @@ class EventTapHandler:
                     return None
             return event
 
-        # mouseDown
+        # mouseDown: repost のものはそのまま通す
         if _repost_pending is not None:
             px, py = _repost_pending
             if abs(x - px) < _REPOST_TOLERANCE and abs(y - py) < _REPOST_TOLERANCE:
@@ -105,31 +101,9 @@ class EventTapHandler:
         if not _is_slack_frontmost():
             return event
 
-        if not _over_btn:
-            return event
-
+        # Slack 内の全 mouseDown をインターセプトし、バックグラウンドでボタン判定
         threading.Thread(target=_process_send, args=(x, y), daemon=True).start()
         return None
-
-
-# ---------------------------------------------------------------------------
-# ホバーポーラー (バックグラウンドスレッド)
-# Slack フロント時のみスキャン、それ以外はフラグをリセット
-# ---------------------------------------------------------------------------
-
-
-def _hover_poller() -> None:
-    global _over_btn
-    while True:
-        try:
-            pos = NSEvent.mouseLocation()
-            mx = float(pos.x)
-            screen_h = float(Quartz.CGDisplayBounds(Quartz.CGMainDisplayID()).size.height)
-            my = screen_h - float(pos.y)
-            _over_btn = is_send_button_at(mx, my)
-        except Exception as e:
-            print(f"[ERROR] hover_poller: {e}")
-        time.sleep(_HOVER_INTERVAL)
 
 
 # ---------------------------------------------------------------------------
@@ -138,14 +112,17 @@ def _hover_poller() -> None:
 
 
 def _process_send(x: float, y: float) -> None:
+    # まずボタン判定 — 非ボタンクリックは即 repost して終了
+    if not is_send_button_at(x, y):
+        _do_repost(x, y)
+        return
+
     text = None
     for _ in range(_RETRY_COUNT):
         text = get_text_near_position(x, y)
         if text:
             break
         time.sleep(_RETRY_INTERVAL)
-
-    print(f"[DEBUG] text={repr(text[:20]) if text else None}")
 
     if not text:
         print("[DEBUG] テキスト取得失敗 — 送信を続行します")
@@ -168,8 +145,6 @@ def _process_send_keyboard() -> None:
         if text:
             break
         time.sleep(_RETRY_INTERVAL)
-
-    print(f"[DEBUG] keyboard text={repr(text[:20]) if text else None}")
 
     if not text:
         print("[DEBUG] テキスト取得失敗 — 送信を続行します")
@@ -236,5 +211,4 @@ def _show_osascript_alert(matched: list[str]) -> None:
     )
     subprocess.run(["osascript", "-e", script], check=False)
     subprocess.run(["osascript", "-e", 'tell application "Slack" to activate'], check=False)
-
 
