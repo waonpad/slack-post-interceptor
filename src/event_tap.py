@@ -13,8 +13,9 @@ from screen_capture import is_send_button_at
 
 _RETRY_INTERVAL = 0.05
 _RETRY_COUNT = 3
-_HOVER_INTERVAL = 0.2
+_HOVER_INTERVAL = 0.05
 _REPOST_TOLERANCE: float = 2.0
+_REPOST_TIMEOUT: float = 0.5
 
 WARN_KEYWORDS: tuple[str, ...] = ("確認", "対応")
 
@@ -197,6 +198,7 @@ def _is_slack_frontmost() -> bool:
 def _do_repost(x: float, y: float) -> None:
     global _repost_pending
     _repost_pending = (x, y)
+    threading.Timer(_REPOST_TIMEOUT, _clear_repost_pending).start()
     point = Quartz.CGPointMake(x, y)
     down = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventLeftMouseDown, point, Quartz.kCGMouseButtonLeft)
     up = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventLeftMouseUp, point, Quartz.kCGMouseButtonLeft)
@@ -204,14 +206,25 @@ def _do_repost(x: float, y: float) -> None:
     Quartz.CGEventPost(Quartz.kCGHIDEventTap, up)
 
 
+def _clear_repost_pending() -> None:
+    global _repost_pending
+    _repost_pending = None
+
+
 def _repost_enter() -> None:
     global _enter_repost_pending
     _enter_repost_pending = True
+    threading.Timer(_REPOST_TIMEOUT, _clear_enter_repost_pending).start()
     src = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemState)
     down = Quartz.CGEventCreateKeyboardEvent(src, _KEYCODE_RETURN, True)
     up = Quartz.CGEventCreateKeyboardEvent(src, _KEYCODE_RETURN, False)
     Quartz.CGEventPost(Quartz.kCGHIDEventTap, down)
     Quartz.CGEventPost(Quartz.kCGHIDEventTap, up)
+
+
+def _clear_enter_repost_pending() -> None:
+    global _enter_repost_pending
+    _enter_repost_pending = False
 
 
 def _show_osascript_alert(matched: list[str]) -> None:
