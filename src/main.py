@@ -40,19 +40,19 @@ def _status(*, ok: bool, label: str) -> None:
 def _wait_for_accessibility() -> None:
     options = {AS.kAXTrustedCheckOptionPrompt: True}
     if AS.AXIsProcessTrustedWithOptions(options):
-        _status(ok=True, label= "アクセシビリティ権限")
+        _status(ok=True, label="アクセシビリティ権限")
         return
 
     print(f"  {_YELLOW}⏳ アクセシビリティ権限を待機中...{_RESET}")
     print(f"     {_DIM}システム設定 > プライバシーとセキュリティ > アクセシビリティ で許可してください{_RESET}")
     while not AS.AXIsProcessTrusted():
         time.sleep(0.5)
-    _status(ok=True, label= "アクセシビリティ権限")
+    _status(ok=True, label="アクセシビリティ権限")
 
 
 def _ensure_screen_recording() -> None:
     if check_screen_recording():
-        _status(ok=True, label= "画面収録権限")
+        _status(ok=True, label="画面収録権限")
         return
 
     print(f"  {_YELLOW}⏳ 画面収録権限をリクエスト中...{_RESET}")
@@ -60,7 +60,7 @@ def _ensure_screen_recording() -> None:
     request_screen_recording()
     while not check_screen_recording():
         time.sleep(0.5)
-    _status(ok=True, label= "画面収録権限")
+    _status(ok=True, label="画面収録権限")
 
 
 def main() -> None:

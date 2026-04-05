@@ -16,6 +16,7 @@ Slack でメッセージを送信しようとしたとき、特定のキーワ�
 ## 要件
 
 - macOS
+- Slackアプリ
 - Python 3.13+
 - [uv](https://docs.astral.sh/uv/)
 - macOSの権限：**アクセシビリティ**、**画面収録**
@@ -71,24 +72,11 @@ LOG_LEVEL=INFO   # DEBUG / INFO / WARNING / ERROR
 WARN_KEYWORDS: tuple[str, ...] = ("確認", "対応")
 ```
 
-## 開発
-
-```bash
-# Lint（自動修正あり）
-task lint
-
-# フォーマット
-task format
-
-# 型チェック
-task type-check
-```
-
 ## アーキテクチャ
 
 ```
 src/
-├── __main__.py        # エントリポイント。権限チェックと起動
+├── main.py        # エントリポイント。権限チェックと起動
 ├── event_tap.py       # CGEventTap によるイベント監視・キーワードチェック
 ├── screen_capture.py  # スクリーンキャプチャによるボタン色判定
 └── accessibility.py   # AX APIによるテキスト取得
