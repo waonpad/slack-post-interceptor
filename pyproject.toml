@@ -12,7 +12,9 @@ dependencies = [
 ]
 
 [tool.uv]
-dev-dependencies = [
+
+[dependency-groups]
+dev = [
     "lefthook>=1.13.5",
     "pyright>=1.1.405",
     "ruff>=0.13.2",
