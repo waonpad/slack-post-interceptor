@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 from typing import Any
 
@@ -16,19 +17,12 @@ _RETRY_COUNT = 3
 
 WARN_KEYWORDS: tuple[str, ...] = ("確認", "対応")
 
-# callback から次 RunLoop へ渡すキュー
 _click_queue: list[dict[str, Any]] = []
-# _repost_click() で投げた mouseDown をスキップするカウンタ
 _repost_count: int = 0
 
 
 def _schedule_timer(target: Any, selector: str) -> None:
-    """NSRunLoopCommonModes でタイマーを登録する。
-
-    scheduledTimerWithTimeInterval は NSDefaultRunLoopMode のみで発火し、
-    EventTap コールバック中 (NSEventTrackingRunLoopMode) から投げると発火しないため
-    NSRunLoop.addTimer_forMode_ で CommonModes に登録する。
-    """
+    """NSRunLoopCommonModes でタイマーを登録する。"""
     timer = NSTimer.timerWithTimeInterval_target_selector_userInfo_repeats_(
         0.0, target, selector, None, False
     )
@@ -36,16 +30,35 @@ def _schedule_timer(target: Any, selector: str) -> None:
 
 
 class _ClickProcessor(NSObject):
+    """NSTimer 経由で次 RunLoop にクリック処理をバックグラウンドスレッドで起動する。"""
+
     def processClick_(self, _timer: Any) -> None:
-        try:
-            if _click_queue:
-                info = _click_queue.pop(0)
-                _process_click(info["x"], info["y"])
-        except Exception as e:
-            print(f"[ERROR] クリック処理エラー: {e}")
+        if _click_queue:
+            info = _click_queue.pop(0)
+            threading.Thread(
+                target=_process_click,
+                args=(info["x"], info["y"]),
+                daemon=True,
+            ).start()
+
+
+class _MainThreadOps(NSObject):
+    """バックグラウンドスレッドからメインスレッドのUI操作を呼び出すブリッジ。"""
+
+    def copyAndRepost_(self, info: Any) -> None:
+        _copy_to_clipboard(info["text"])
+        _repost_click(info["x"], info["y"])
+
+    def copyAndWarn_(self, info: Any) -> None:
+        _copy_to_clipboard(info["text"])
+        _show_keyword_warning(info["matched"])
+
+    def repost_(self, info: Any) -> None:
+        _repost_click(info["x"], info["y"])
 
 
 _click_processor = _ClickProcessor.alloc().init()
+_main_ops = _MainThreadOps.alloc().init()
 
 
 class EventTapHandler:
@@ -58,7 +71,7 @@ class EventTapHandler:
         self._tap = Quartz.CGEventTapCreate(
             Quartz.kCGSessionEventTap,
             Quartz.kCGHeadInsertEventTap,
-            Quartz.kCGEventTapOptionDefault,  # アクティブタップ: イベントを抑制できる
+            Quartz.kCGEventTapOptionDefault,
             mask,
             self._callback,
             None,
@@ -83,23 +96,23 @@ class EventTapHandler:
         if event_type == Quartz.kCGEventLeftMouseDown:
             if _repost_count > 0:
                 _repost_count -= 1
-                return event  # 再送信イベントはそのまま通す
+                return event
             if _is_slack_frontmost():
                 loc = Quartz.CGEventGetLocation(event)
                 _click_queue.append({"x": float(loc.x), "y": float(loc.y)})
                 _schedule_timer(_click_processor, "processClick:")
-                return None  # いったん抑制し、次 RunLoop で判定
+                return None  # 抑制してバックグラウンドで判定
         return event
 
 
 # ---------------------------------------------------------------------------
-# Click processing (callback の外で実行 — タイムアウト対象外)
+# Click processing — バックグラウンドスレッドで実行 (RunLoop をブロックしない)
 # ---------------------------------------------------------------------------
 
 
 def _process_click(x: float, y: float) -> None:
     if not is_send_button_at(x, y):
-        _repost_click(x, y)
+        _main_ops.performSelectorOnMainThread_withObject_waitUntilDone_("repost:", {"x": x, "y": y}, False)
         return
 
     text = None
@@ -111,19 +124,19 @@ def _process_click(x: float, y: float) -> None:
 
     if not text:
         print("[DEBUG] テキスト取得失敗")
-        _repost_click(x, y)
+        _main_ops.performSelectorOnMainThread_withObject_waitUntilDone_("repost:", {"x": x, "y": y}, False)
         return
 
     matched = [kw for kw in WARN_KEYWORDS if kw in text]
     if matched:
         print(f"[INFO] キーワード検出: {matched} — 送信をブロック")
-        _copy_to_clipboard(text)
-        _show_keyword_warning(matched)
-        return
-
-    _copy_to_clipboard(text)
-    print("[INFO] クリップボードにコピー済み — 送信を続行します")
-    _repost_click(x, y)
+        _main_ops.performSelectorOnMainThread_withObject_waitUntilDone_(
+            "copyAndWarn:", {"text": text, "matched": matched}, True
+        )
+    else:
+        _main_ops.performSelectorOnMainThread_withObject_waitUntilDone_(
+            "copyAndRepost:", {"text": text, "x": x, "y": y}, False
+        )
 
 
 # ---------------------------------------------------------------------------
