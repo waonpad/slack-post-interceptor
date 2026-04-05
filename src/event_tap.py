@@ -27,6 +27,7 @@ _FLAG_CMD = Quartz.kCGEventFlagMaskCommand
 
 _repost_pending: tuple[float, float] | None = None
 _enter_repost_pending: bool = False
+_dialog_open: bool = False
 
 
 class EventTapHandler:
@@ -79,7 +80,7 @@ class EventTapHandler:
             if _enter_repost_pending:
                 _enter_repost_pending = False
                 return event
-            if _is_slack_frontmost():
+            if _is_slack_frontmost() and not _dialog_open:
                 threading.Thread(target=_process_send_keyboard, daemon=True).start()
                 return None
         return event
@@ -100,7 +101,7 @@ class EventTapHandler:
                 _repost_pending = None
                 return event
 
-        if not _is_slack_frontmost():
+        if not _is_slack_frontmost() or _dialog_open:
             return event
 
         # Slack 内の全 mouseDown をインターセプトし、バックグラウンドでボタン判定
@@ -205,13 +206,16 @@ def _clear_enter_repost_pending() -> None:
 
 
 def _show_osascript_alert(matched: list[str]) -> None:
+    global _dialog_open
     keywords = "、".join(f"「{kw}」" for kw in matched)
     script = (
         f'display alert "送信をブロックしました" '
         f'message "{keywords} が含まれています。\\nメッセージを修正して再度送信してください。" '
         f'buttons {{"OK"}} default button "OK"'
     )
+    _dialog_open = True
     result = subprocess.run(["osascript", "-e", script], check=False, stdout=DEVNULL, stderr=subprocess.PIPE)
+    _dialog_open = False
     if result.returncode != 0:
         logger.warning("osascript アラート失敗 (code=%d): %s", result.returncode, result.stderr.decode().strip())
     activate = 'tell application "Slack" to activate'
