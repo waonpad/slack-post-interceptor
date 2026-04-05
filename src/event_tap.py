@@ -6,6 +6,7 @@ from typing import Any
 
 import Quartz
 from AppKit import NSAlert, NSApplication, NSPasteboard, NSPasteboardTypeString, NSWarningAlertStyle, NSWorkspace
+from Foundation import NSObject
 
 from accessibility import SLACK_BUNDLE_ID, get_text_near_position
 from screen_capture import is_send_button_at
@@ -127,7 +128,10 @@ def _process_send(x: float, y: float) -> None:
     if matched:
         print(f"[INFO] キーワード検出: {matched} — 送信をブロック")
         _copy_to_clipboard(text)
-        _show_keyword_warning(matched)
+        # NSAlert はメインスレッドのみ — performSelectorOnMainThread で委譲
+        _alert_bridge.performSelectorOnMainThread_withObject_waitUntilDone_(
+            "showWarning:", matched, True
+        )
     else:
         _copy_to_clipboard(text)
         print("[INFO] クリップボードにコピー済み — 送信を続行します")
@@ -137,6 +141,14 @@ def _process_send(x: float, y: float) -> None:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+class _AlertBridge(NSObject):
+    def showWarning_(self, matched: Any) -> None:
+        _show_keyword_warning(list(matched))
+
+
+_alert_bridge = _AlertBridge.alloc().init()
 
 
 def _do_repost(x: float, y: float) -> None:
