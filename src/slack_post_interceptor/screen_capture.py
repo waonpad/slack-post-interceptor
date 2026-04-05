@@ -4,10 +4,10 @@ import ctypes
 
 import Quartz
 
-_BTN_R = (0, 160)
-_BTN_G = (130, 255)
-_BTN_B = (50, 220)
-_BTN_G_MINUS_R_MIN: int = 30
+_BTN_R = (0, 60)       # 実測値: 22
+_BTN_G = (110, 160)    # 実測値: 133
+_BTN_B = (80, 130)     # 実測値: 103
+_BTN_G_MINUS_R_MIN: int = 80  # 実測値: 133-22=111
 _OUTSIDE_COLOR_MAX: int = 120  # ボタン外の暗い背景色の最大輝度値
 
 
