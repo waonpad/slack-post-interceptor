@@ -4,7 +4,7 @@ import time
 from typing import Any
 
 import Quartz
-from AppKit import NSAlert, NSPasteboard, NSPasteboardTypeString, NSWarningAlertStyle, NSWorkspace
+from AppKit import NSAlert, NSApplication, NSPasteboard, NSPasteboardTypeString, NSWarningAlertStyle, NSWorkspace
 
 from accessibility import SLACK_BUNDLE_ID, get_text_near_position
 from screen_capture import is_send_button_at
@@ -93,6 +93,7 @@ def _show_keyword_warning(matched: list[str]) -> None:
     alert.setMessageText_("曖昧な表現が含まれています")
     alert.setInformativeText_(f"{keywords} が含まれています。意図が明確か確かめてください。")
     alert.addButtonWithTitle_("OK")
+    NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
     alert.runModal()
 
 
