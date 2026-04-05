@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import signal
 import time
 
 import ApplicationServices as AS
-import Quartz
+from AppKit import NSApplication, NSApplicationActivationPolicyAccessory
 
 from event_tap import EventTapHandler
 from screen_capture import check_screen_recording, request_screen_recording
@@ -43,16 +44,22 @@ def main() -> None:
     print("Slack Post Interceptor")
     print("======================")
 
+    app = NSApplication.sharedApplication()
+    app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
+
+    def _on_sigint(*_: object) -> None:
+        app.stop_(None)
+
+    signal.signal(signal.SIGINT, _on_sigint)
+
     _wait_for_accessibility()
     _ensure_screen_recording()
 
     handler = EventTapHandler()
     handler.start()
 
-    try:
-        Quartz.CFRunLoopRun()
-    except KeyboardInterrupt:
-        print("\n[INFO] 終了します")
+    app.run()
+    print("\n[INFO] 終了します")
 
 
 if __name__ == "__main__":
