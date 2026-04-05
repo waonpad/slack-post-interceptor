@@ -7,19 +7,19 @@ from typing import Any
 import Quartz
 from AppKit import NSAlert, NSApplication, NSPasteboard, NSPasteboardTypeString, NSWarningAlertStyle, NSWorkspace
 
-from accessibility import SLACK_BUNDLE_ID, get_send_button_rect, get_text_near_position
+from accessibility import SLACK_BUNDLE_ID, get_text_near_position
+from screen_capture import is_send_button_at
 
 _PREVIEW_MAX_LEN: int = 60
 _RETRY_INTERVAL = 0.05
 _RETRY_COUNT = 3
-_CACHE_INTERVAL = 1.0
+_HOVER_INTERVAL = 0.08   # ホバーポーリング間隔 (秒)
 _REPOST_TOLERANCE: float = 2.0
 
 WARN_KEYWORDS: tuple[str, ...] = ("確認", "対応")
 
-# AX で取得したボタン座標キャッシュ (x, y, w, h) — バックグラウンドスレッドが更新
-_btn_rect: tuple[float, float, float, float] | None = None
-# 再送信イベントを識別するフラグ
+# バックグラウンドポーラーが更新するフラグ: マウスが送信ボタン上にあるか
+_over_btn: bool = False
 _repost_pending: tuple[float, float] | None = None
 
 
@@ -28,8 +28,7 @@ class EventTapHandler:
         self._tap: Any = None
 
     def start(self) -> None:
-        # キャッシュ更新スレッドを起動
-        threading.Thread(target=_cache_updater, daemon=True).start()
+        threading.Thread(target=_hover_poller, daemon=True).start()
 
         mask = (
             Quartz.CGEventMaskBit(Quartz.kCGEventLeftMouseDown)
@@ -67,47 +66,43 @@ class EventTapHandler:
             if _repost_pending is not None:
                 px, py = _repost_pending
                 if abs(x - px) < _REPOST_TOLERANCE and abs(y - py) < _REPOST_TOLERANCE:
-                    return None  # 再送信の mouseUp を抑制
+                    return None
             return event
 
-        # mouseDown 以下
+        # mouseDown
         if _repost_pending is not None:
             px, py = _repost_pending
             if abs(x - px) < _REPOST_TOLERANCE and abs(y - py) < _REPOST_TOLERANCE:
                 _repost_pending = None
-                return event  # 再送信イベントを通す
+                return event
 
         if not _is_slack_frontmost():
             return event
 
-        # コールバック内は純粋な座標比較のみ (API呼び出しなし)
-        if not _is_in_btn_rect(x, y):
+        # フラグ読み取りのみ — API呼び出しなし (~0.001ms)
+        if not _over_btn:
             return event
 
-        # 送信ボタン範囲内: 抑制してバックグラウンドで処理
         threading.Thread(target=_process_send, args=(x, y), daemon=True).start()
         return None
 
 
 # ---------------------------------------------------------------------------
-# ボタン座標キャッシュ更新 (バックグラウンドスレッド)
+# ホバーポーラー (バックグラウンドスレッド)
+# is_send_button_at はここから呼ぶ — コールバック外なのでデッドロックしない
 # ---------------------------------------------------------------------------
 
 
-def _cache_updater() -> None:
-    global _btn_rect
+def _hover_poller() -> None:
+    global _over_btn
     while True:
-        rect = get_send_button_rect()
-        if rect:
-            _btn_rect = rect
-        time.sleep(_CACHE_INTERVAL)
-
-
-def _is_in_btn_rect(x: float, y: float) -> bool:
-    if _btn_rect is None:
-        return False
-    bx, by, bw, bh = _btn_rect
-    return bx <= x <= bx + bw and by <= y <= by + bh
+        if _is_slack_frontmost():
+            mouse = Quartz.CGEventCreate(None)
+            loc = Quartz.CGEventGetLocation(mouse)
+            _over_btn = is_send_button_at(float(loc.x), float(loc.y))
+        else:
+            _over_btn = False
+        time.sleep(_HOVER_INTERVAL)
 
 
 # ---------------------------------------------------------------------------
