@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import ctypes
-import json
-from pathlib import Path
 
 import Quartz
 
-_CONFIG_PATH = Path(__file__).parent.parent.parent / "button_color.json"
-_DEFAULT_RANGE = {"r": (0, 160), "g": (130, 255), "b": (50, 220), "g_minus_r_min": 30}
+_BTN_R = (0, 160)
+_BTN_G = (130, 255)
+_BTN_B = (50, 220)
+_BTN_G_MINUS_R_MIN: int = 30
 _OUTSIDE_COLOR_MAX: int = 120  # ボタン外の暗い背景色の最大輝度値
 
 
@@ -68,16 +68,15 @@ def has_send_button_nearby(x: float, y: float, radius: int = 16) -> bool:
 
     Quartz.CGContextDrawImage(ctx, Quartz.CGRectMake(0, 0, w, h), image)
 
-    cr = _load_color_range()
     for row in range(h):
         for col in range(w):
             idx = row * bpr + col * 4
             r, g, b = int(buf[idx]), int(buf[idx + 1]), int(buf[idx + 2])
             if (
-                cr["r"][0] <= r <= cr["r"][1]
-                and cr["g"][0] <= g <= cr["g"][1]
-                and cr["b"][0] <= b <= cr["b"][1]
-                and (g - r) >= cr["g_minus_r_min"]
+                _BTN_R[0] <= r <= _BTN_R[1]
+                and _BTN_G[0] <= g <= _BTN_G[1]
+                and _BTN_B[0] <= b <= _BTN_B[1]
+                and (g - r) >= _BTN_G_MINUS_R_MIN
             ):
                 return True
     return False
@@ -97,17 +96,3 @@ def check_screen_recording() -> bool:
 
 def request_screen_recording() -> None:
     Quartz.CGRequestScreenCaptureAccess()
-
-
-# ---------------------------------------------------------------------------
-# Internal
-# ---------------------------------------------------------------------------
-
-
-def _load_color_range() -> dict:  # type: ignore[type-arg]
-    if _CONFIG_PATH.exists():
-        try:
-            return json.loads(_CONFIG_PATH.read_text())  # type: ignore[no-any-return]
-        except json.JSONDecodeError:
-            pass
-    return _DEFAULT_RANGE
