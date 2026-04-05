@@ -10,6 +10,7 @@ from AppKit import NSAlert, NSApplication, NSPasteboard, NSPasteboardTypeString,
 from accessibility import SLACK_BUNDLE_ID, get_text_near_position
 from screen_capture import is_send_button_at
 
+_REPOST_TOLERANCE: float = 2.0
 _PREVIEW_MAX_LEN: int = 60
 _RETRY_INTERVAL = 0.05
 _RETRY_COUNT = 3
@@ -64,7 +65,7 @@ class EventTapHandler:
             # 再送信イベントはそのまま通す
             if _repost_pending is not None:
                 px, py = _repost_pending
-                if abs(x - px) < 2 and abs(y - py) < 2:
+                if abs(x - px) < _REPOST_TOLERANCE and abs(y - py) < _REPOST_TOLERANCE:
                     _repost_pending = None
                     return event
 
@@ -85,7 +86,7 @@ class EventTapHandler:
             # 再送信待ちの座標と一致する mouseUp も抑制
             if _repost_pending is not None:
                 px, py = _repost_pending
-                if abs(x - px) < 2 and abs(y - py) < 2:
+                if abs(x - px) < _REPOST_TOLERANCE and abs(y - py) < _REPOST_TOLERANCE:
                     return None
 
         return event
