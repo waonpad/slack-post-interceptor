@@ -5,7 +5,15 @@ import time
 from typing import Any
 
 import Quartz
-from AppKit import NSAlert, NSApplication, NSPasteboard, NSPasteboardTypeString, NSWarningAlertStyle, NSWorkspace
+from AppKit import (
+    NSAlert,
+    NSApplication,
+    NSEvent,
+    NSPasteboard,
+    NSPasteboardTypeString,
+    NSWarningAlertStyle,
+    NSWorkspace,
+)
 from Foundation import NSObject
 
 from accessibility import SLACK_BUNDLE_ID, get_text_near_position
@@ -98,9 +106,12 @@ def _hover_poller() -> None:
     global _over_btn
     while True:
         if _is_slack_frontmost():
-            mouse = Quartz.CGEventCreate(None)
-            loc = Quartz.CGEventGetLocation(mouse)
-            _over_btn = is_send_button_at(float(loc.x), float(loc.y))
+            pos = NSEvent.mouseLocation()
+            mx, my = float(pos.x), float(pos.y)
+            result = is_send_button_at(mx, my)
+            if result != _over_btn:
+                print(f"[DEBUG] hover x={mx:.0f} y={my:.0f} over_btn={result}")
+            _over_btn = result
         else:
             _over_btn = False
         time.sleep(_HOVER_INTERVAL)
