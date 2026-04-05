@@ -9,6 +9,7 @@ import Quartz
 from AppKit import NSWorkspace
 
 from accessibility import SLACK_BUNDLE_ID, get_focused_text, get_text_near_position
+from log import logger
 from screen_capture import is_send_button_at
 
 _RETRY_INTERVAL = 0.05
@@ -46,17 +47,17 @@ class EventTapHandler:
             None,
         )
         if self._tap is None:
-            print("[ERROR] CGEventTap の作成に失敗しました。アクセシビリティ権限を確認してください。")
+            logger.error("CGEventTap の作成に失敗しました。アクセシビリティ権限を確認してください。")
             raise SystemExit(1)
 
         source = Quartz.CFMachPortCreateRunLoopSource(None, self._tap, 0)
         Quartz.CFRunLoopAddSource(Quartz.CFRunLoopGetMain(), source, Quartz.kCFRunLoopCommonModes)
         Quartz.CGEventTapEnable(self._tap, True)
-        print("[INFO] 監視開始 — Slack 送信ボタンをクリックするとキーワードをチェックします")
+        logger.info("監視開始 — Slack 送信ボタンをクリックするとキーワードをチェックします")
 
     def _callback(self, _proxy: Any, event_type: int, event: Any, _refcon: Any) -> Any:
         if event_type == Quartz.kCGEventTapDisabledByTimeout:
-            print("[WARN] EventTap タイムアウト — 再有効化します")
+            logger.warning("EventTap タイムアウト — 再有効化します")
             Quartz.CGEventTapEnable(self._tap, True)
             return None
 
@@ -125,16 +126,16 @@ def _process_send(x: float, y: float) -> None:
         time.sleep(_RETRY_INTERVAL)
 
     if not text:
-        print("[DEBUG] テキスト取得失敗 — 送信を続行します")
+        logger.debug("テキスト取得失敗 — 送信を続行します")
         _do_repost(x, y)
         return
 
     matched = [kw for kw in WARN_KEYWORDS if kw in text]
     if matched:
-        print(f"[INFO] キーワード検出: {matched} — 送信をブロック")
+        logger.info("キーワード検出: %s — 送信をブロック", matched)
         _show_osascript_alert(matched)
     else:
-        print("[INFO] キーワードなし — 送信を続行します")
+        logger.info("キーワードなし — 送信を続行します")
         _do_repost(x, y)
 
 
@@ -147,16 +148,16 @@ def _process_send_keyboard() -> None:
         time.sleep(_RETRY_INTERVAL)
 
     if not text:
-        print("[DEBUG] テキスト取得失敗 — 送信を続行します")
+        logger.debug("テキスト取得失敗 — 送信を続行します")
         _repost_enter()
         return
 
     matched = [kw for kw in WARN_KEYWORDS if kw in text]
     if matched:
-        print(f"[INFO] キーワード検出: {matched} — 送信をブロック")
+        logger.info("キーワード検出: %s — 送信をブロック", matched)
         _show_osascript_alert(matched)
     else:
-        print("[INFO] キーワードなし — 送信を続行します")
+        logger.info("キーワードなし — 送信を続行します")
         _repost_enter()
 
 
