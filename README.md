@@ -36,6 +36,12 @@ task start
 初回起動時、権限が未付与の場合はダイアログが表示されます。  
 **システム設定 > プライバシーとセキュリティ** でアクセシビリティと画面収録を許可してください。
 
+### 古いプロセスの終了
+
+```bash
+ps aux | grep "main.py" | grep slack | grep -v grep | awk '{print $2}' | xargs kill
+```
+
 ## 開発
 
 ```bash
