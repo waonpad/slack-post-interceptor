@@ -39,6 +39,8 @@ ignore = [
     "ANN401", # pyobjcのAny型は避けられない
     "FBT003", # pyobjcのC関数バインディングはキーワード引数不可
     "PLW0603", # グローバルキャッシュパターン
+    "S603",    # osascript は固定コマンドで安全
+    "S607",    # osascript はフルパス不要
     "PLR0911", # コールバックは分岐が多くなるため return 数制限を緩和
     # "PD011", # pandasを使う場合
     # "B008", # FastAPIでDependsを使う場合
