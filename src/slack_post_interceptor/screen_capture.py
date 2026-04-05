@@ -4,10 +4,7 @@ import ctypes
 
 import Quartz
 
-_BTN_R = (0, 60)       # 実測値: 22
-_BTN_G = (110, 160)    # 実測値: 133
-_BTN_B = (80, 130)     # 実測値: 103
-_BTN_G_MINUS_R_MIN: int = 80  # 実測値: 133-22=111
+_BTN_COLOR: tuple[int, int, int] = (22, 133, 103)
 _OUTSIDE_COLOR_MAX: int = 120  # ボタン外の暗い背景色の最大輝度値
 
 
@@ -72,12 +69,7 @@ def has_send_button_nearby(x: float, y: float, radius: int = 16) -> bool:
         for col in range(w):
             idx = row * bpr + col * 4
             r, g, b = int(buf[idx]), int(buf[idx + 1]), int(buf[idx + 2])
-            if (
-                _BTN_R[0] <= r <= _BTN_R[1]
-                and _BTN_G[0] <= g <= _BTN_G[1]
-                and _BTN_B[0] <= b <= _BTN_B[1]
-                and (g - r) >= _BTN_G_MINUS_R_MIN
-            ):
+            if (r, g, b) == _BTN_COLOR:
                 return True
     return False
 
