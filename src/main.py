@@ -4,7 +4,7 @@ import signal
 import time
 
 import ApplicationServices as AS
-from AppKit import NSApplication, NSApplicationActivationPolicyAccessory
+from AppKit import NSApplication, NSApplicationActivationPolicyAccessory, NSApplicationDefined, NSEvent
 
 from event_tap import WARN_KEYWORDS, EventTapHandler
 from log import logger
@@ -71,6 +71,11 @@ def main() -> None:
 
     def _on_sigint(*_: object) -> None:
         app.stop_(None)
+        # stop_() はフラグを立てるだけなので、ダミーイベントをポストしてループを即時終了させる
+        dummy = NSEvent.otherEventWithType_location_modifierFlags_timestamp_windowNumber_context_subtype_data1_data2_(
+            NSApplicationDefined, (0, 0), 0, 0, 0, None, 0, 0, 0
+        )
+        app.postEvent_atStart_(dummy, True)
 
     signal.signal(signal.SIGINT, _on_sigint)
 
