@@ -5,6 +5,8 @@ import ctypes
 import Quartz
 
 _BTN_COLOR: tuple[int, int, int] = (22, 133, 103)
+# デバイスによって取得される色が微妙に異なるため許容誤差を設ける
+_BTN_COLOR_TOLERANCE: int = 10
 _OUTSIDE_COLOR_MAX: int = 120  # ボタン外の暗い背景色の最大輝度値
 _SCAN_RADIUS: int = 16
 
@@ -49,7 +51,8 @@ def is_send_button_at(x: float, y: float) -> bool:
     for row in range(h):
         for col in range(w):
             idx = row * bpr + col * 4
-            if (int(buf[idx]), int(buf[idx + 1]), int(buf[idx + 2])) == _BTN_COLOR:
+            r, g, b = int(buf[idx]), int(buf[idx + 1]), int(buf[idx + 2])
+            if all(abs(c - t) <= _BTN_COLOR_TOLERANCE for c, t in zip((r, g, b), _BTN_COLOR, strict=False)):
                 return True
     return False
 
